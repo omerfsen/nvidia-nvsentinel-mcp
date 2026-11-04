@@ -18,6 +18,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -34,14 +37,84 @@ import (
 // Populated during the build.
 var version = "dev"
 
-// Long enough for a running scenario to reset the lab.
-const shutdownTimeout = 6 * time.Minute
+const (
+	// Long enough for a running scenario to reset the lab.
+	shutdownTimeout = 6 * time.Minute
+
+	usage = `nvidia-nvsentinel-mcp: an MCP server for testing NVIDIA NVSentinel on a lab cluster.
+
+It speaks MCP over stdin and stdout, so an MCP client starts it. Run by hand, it logs one
+line to stderr and then waits for a client: press Ctrl-C to stop it.
+
+Usage:
+  nvidia-nvsentinel-mcp [flags]
+
+Flags:
+  -h, --help     show this help
+  -v, --version  show the version
+  -d, --debug    log each tool call and cluster detail to stderr
+
+Environment:
+  NVSENTINEL_MCP_KUBECONFIG     the one kubeconfig it uses, private (default
+                                ~/.kube/nvsentinel-lab-mcp.yaml)
+  NVSENTINEL_MCP_ALLOW_CHANGES  exactly "true" allows the change tools, on a kind cluster only
+  NVSENTINEL_MCP_LAB_CONTEXT    the context changes need, starting with kind- (default
+                                kind-nvsentinel-lab)
+
+Docs: https://github.com/omerfsen/nvidia-nvsentinel-mcp
+`
+)
 
 func main() {
-	if err := run(); err != nil {
+	options, exitCode, done := parseFlags(os.Args[1:], os.Stdout, os.Stderr)
+	if done {
+		os.Exit(exitCode)
+	}
+
+	if err := run(options); err != nil {
 		slog.Error("the server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+type options struct {
+	debug bool
+}
+
+// parseFlags reads the command line. When done is true, the program ends with exitCode.
+func parseFlags(args []string, stdout, stderr io.Writer) (parsed options, exitCode int, done bool) {
+	flags := flag.NewFlagSet("nvidia-nvsentinel-mcp", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	var showHelp, showVersion bool
+
+	flags.BoolVar(&showHelp, "h", false, "")
+	flags.BoolVar(&showHelp, "help", false, "")
+	flags.BoolVar(&showVersion, "v", false, "")
+	flags.BoolVar(&showVersion, "version", false, "")
+	flags.BoolVar(&parsed.debug, "d", false, "")
+	flags.BoolVar(&parsed.debug, "debug", false, "")
+
+	if err := flags.Parse(args); err != nil {
+		fmt.Fprintf(stderr, "%v\n\n%s", err, usage)
+		return parsed, 2, true
+	}
+
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument %q\n\n%s", flags.Arg(0), usage)
+		return parsed, 2, true
+	}
+
+	switch {
+	case showHelp:
+		fmt.Fprint(stdout, usage)
+		return parsed, 0, true
+	case showVersion:
+		fmt.Fprintln(stdout, buildVersion())
+		return parsed, 0, true
+	}
+
+	return parsed, 0, false
 }
 
 // buildVersion falls back to the module version, which `go install ...@vX.Y.Z` records.
@@ -53,8 +126,14 @@ func buildVersion() string {
 	return version
 }
 
-func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+func run(opts options) error {
+	level := slog.LevelInfo
+	if opts.debug {
+		level = slog.LevelDebug
+	}
+
+	// Stderr only: stdout belongs to the MCP protocol.
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -65,6 +144,9 @@ func run() error {
 
 	config := lab.ConfigFromEnv()
 	mcpServer := server.New(ctx, buildVersion(), func() (*lab.Lab, error) { return lab.Open(config) }, logger)
+
+	logger.Info("started: waiting for an MCP client on stdin (see --help)",
+		"version", buildVersion(), "changesAllowed", config.AllowChanges)
 
 	err := mcpServer.MCP().Run(ctx, &mcp.StdioTransport{})
 

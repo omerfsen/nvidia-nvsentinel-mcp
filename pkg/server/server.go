@@ -387,6 +387,8 @@ func readHandler[In, Out any](
 		ctx, cancel := s.followShutdown(ctx)
 		defer cancel()
 
+		slog.Debug("a tool was called", "tool", tool)
+
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				err = callerError(tool, fmt.Errorf("panic: %v", recovered))
