@@ -1,0 +1,333 @@
+# Vendored from https://github.com/omerfsen/cicd (github/pipelines/security/); edit it
+# there and re-run its install.sh. Settings for THIS repo live in
+# .github/cicd/config, which install.sh never overwrites.
+#
+# security - three scanners, each a job with its own switch:
+#   - gitleaks: secrets in the git history. A PR scans its own commits
+#     (base..head); main, the weekly run and manual runs scan all of it.
+#   - osv-scanner: known vulnerabilities in the dependencies the lockfiles
+#     pin. By default only those with a fix available fail it.
+#   - semgrep: code patterns at or above SECURITY_SEMGREP_MIN_SEVERITY. It
+#     only reports until SECURITY_SEMGREP_BLOCKING=true.
+# Findings go to the run summary and a security-<tool> artifact; secrets are
+# redacted everywhere. Uploading SARIF to code scanning is opt-in
+# (SECURITY_SARIF): private repos need a paid licence for it. No credential is
+# used, so fork PRs run it too. Helpers: .github/cicd/security/security.sh.
+#
+# Kill switch: SECURITY_ENABLED=false in .github/cicd/config.
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # New advisories appear without a code change.
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Reads this repo's settings from the BASE of a PR (or the commit that runs),
+  # never from the PR's own head, so a PR cannot switch off its own checks or
+  # change the settings it is checked with.
+  switch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      on: ${{ steps.s.outputs.on }}
+      runner: ${{ steps.s.outputs.runner }}
+      gitleaks: ${{ steps.s.outputs.gitleaks }}
+      gitleaks_version: ${{ steps.s.outputs.gitleaks_version }}
+      gitleaks_config: ${{ steps.s.outputs.gitleaks_config }}
+      osv: ${{ steps.s.outputs.osv }}
+      osv_version: ${{ steps.s.outputs.osv_version }}
+      osv_paths: ${{ steps.s.outputs.osv_paths }}
+      osv_config: ${{ steps.s.outputs.osv_config }}
+      osv_fail_on: ${{ steps.s.outputs.osv_fail_on }}
+      semgrep: ${{ steps.s.outputs.semgrep }}
+      semgrep_version: ${{ steps.s.outputs.semgrep_version }}
+      semgrep_config: ${{ steps.s.outputs.semgrep_config }}
+      semgrep_paths: ${{ steps.s.outputs.semgrep_paths }}
+      semgrep_min_severity: ${{ steps.s.outputs.semgrep_min_severity }}
+      semgrep_blocking: ${{ steps.s.outputs.semgrep_blocking }}
+      sarif: ${{ steps.s.outputs.sarif }}
+    steps:
+      - id: s
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.base.sha || github.sha }}
+          # true for a PR from a fork: its code never runs on a self-hosted runner.
+          FORK: ${{ github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          gh api "repos/$REPO/contents/.github/cicd/config?ref=$REF" --jq .content 2>/dev/null | base64 -d > "$RUNNER_TEMP/config" || true
+          conf() { sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1 | tr -d '"'; }
+          if [ "$(conf SECURITY_ENABLED)" = "false" ]; then
+            echo "SECURITY_ENABLED is false in .github/cicd/config; nothing runs"; printf 'on=false\nrunner="ubuntu-24.04"\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Where the other jobs run: a runner label, or a JSON list of labels
+          # for a self-hosted runner. This job itself stays hosted, so a dead
+          # runner cannot stop it deciding. A fork PR always runs hosted.
+          runner() {  # runner <KEY>: the runs-on value, as JSON for fromJSON
+            local x j
+            x=$(sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1)  # raw: a JSON list keeps its quotes
+            case "$x" in
+              "") j='"ubuntu-24.04"' ;;
+              \[*) j=$(jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string" and test("^[A-Za-z0-9._-]+$")))' <<<"$x" 2>/dev/null) || j= ;;
+              *) x=$(tr -d '"' <<<"$x"); if [[ $x =~ ^[A-Za-z0-9._-]+$ ]]; then j=$(jq -nc --arg l "$x" '$l'); else j=; fi ;;
+            esac
+            if [ -z "$j" ]; then echo "::error::$1 must be a runner label or a JSON list of labels, not '$x'" >&2; return 1; fi
+            if [ "$FORK" = true ] && [ "$j" != '"ubuntu-24.04"' ]; then
+              echo "::notice::A PR from a fork runs on ubuntu-24.04, whatever $1 says" >&2; j='"ubuntu-24.04"'
+            fi
+            echo "$j"
+          }
+          r=$(runner SECURITY_RUNNER) || { echo 'runner="ubuntu-24.04"' >> "$GITHUB_OUTPUT"; exit 1; }
+          echo "runner=$r" >> "$GITHUB_OUTPUT"
+          v() { local x; x=$(conf "$1"); echo "${x:-$2}"; }
+          bool() {  # bool <KEY> <default>: anything but true/false stops the run
+            local x; x=$(v "$1" "$2")
+            case "$x" in true|false) echo "$x" ;; *) echo "::error::$1 must be true or false, not '$x'" >&2; return 1 ;; esac
+          }
+          gitleaks=$(bool SECURITY_GITLEAKS true) || exit 1
+          osv=$(bool SECURITY_OSV true) || exit 1
+          semgrep=$(bool SECURITY_SEMGREP true) || exit 1
+          blocking=$(bool SECURITY_SEMGREP_BLOCKING false) || exit 1
+          sarif=$(bool SECURITY_SARIF false) || exit 1
+          fail_on=$(v SECURITY_OSV_FAIL_ON fixed)
+          case "$fail_on" in fixed|any|none) ;; *) echo "::error::SECURITY_OSV_FAIL_ON must be fixed, any or none, not '$fail_on'"; exit 1 ;; esac
+          min=$(v SECURITY_SEMGREP_MIN_SEVERITY WARNING)
+          case "$min" in INFO|WARNING|ERROR) ;; *) echo "::error::SECURITY_SEMGREP_MIN_SEVERITY must be INFO, WARNING or ERROR, not '$min'"; exit 1 ;; esac
+          {
+            echo "on=true"
+            echo "gitleaks=$gitleaks"
+            echo "gitleaks_version=$(v SECURITY_GITLEAKS_VERSION 8.30.1)"
+            echo "gitleaks_config=$(v SECURITY_GITLEAKS_CONFIG '')"
+            echo "osv=$osv"
+            echo "osv_version=$(v SECURITY_OSV_VERSION 2.6.0)"
+            echo "osv_paths=$(v SECURITY_OSV_PATHS .)"
+            echo "osv_config=$(v SECURITY_OSV_CONFIG '')"
+            echo "osv_fail_on=$fail_on"
+            echo "semgrep=$semgrep"
+            echo "semgrep_version=$(v SECURITY_SEMGREP_VERSION 1.179.0)"
+            echo "semgrep_config=$(v SECURITY_SEMGREP_CONFIG p/default)"
+            echo "semgrep_paths=$(v SECURITY_SEMGREP_PATHS .)"
+            echo "semgrep_min_severity=$min"
+            echo "semgrep_blocking=$blocking"
+            echo "sarif=$sarif"
+          } >> "$GITHUB_OUTPUT"
+
+  gitleaks:
+    needs: switch
+    if: needs.switch.outputs.on == 'true' && needs.switch.outputs.gitleaks == 'true'
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.switch.outputs.gitleaks_version }}
+      CONFIG: ${{ needs.switch.outputs.gitleaks_config }}
+      SARIF: ${{ needs.switch.outputs.sarif }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Into $RUNNER_TEMP/bin, checked against the release's own checksums.
+      - name: Install gitleaks
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          v=${VERSION#v}; f="gitleaks_${v}_linux_x64.tar.gz"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v$v"
+          curl -sSfLO "$base/$f"
+          curl -sSfL "$base/gitleaks_${v}_checksums.txt" | grep " $f\$" | sha256sum -c -
+          mkdir -p bin && tar -xzf "$f" -C bin gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Exit 0 clean, 1 secrets found; anything else is a broken scan.
+      - name: Scan the git history
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          OUT=$RUNNER_TEMP/security; mkdir -p "$OUT"
+          h=.github/cicd/security/security.sh
+          args=(git --redact --no-banner)
+          [ -z "$CONFIG" ] || args+=(--config "$CONFIG")
+          scope="the whole history"
+          if [ "$EVENT" = pull_request ]; then
+            range=$(bash "$h" range "$BASE" "$HEAD")
+            if [ -n "$range" ]; then args+=(--log-opts "$range"); scope="this PR's commits"
+            else echo "::notice::The PR's base or head commit is not in the checkout; scanning the whole history"; fi
+          fi
+          rc=0; gitleaks "${args[@]}" --report-format json --report-path "$OUT/gitleaks.json" . || rc=$?
+          if [ "$rc" -gt 1 ] || [ ! -s "$OUT/gitleaks.json" ]; then echo "::error::gitleaks did not finish (exit $rc)"; exit 1; fi
+          if [ "$SARIF" = true ]; then
+            gitleaks "${args[@]}" --report-format sarif --report-path "$OUT/gitleaks.sarif" . >/dev/null 2>&1 || true
+          fi
+          r=0; report=$(bash "$h" gitleaks < "$OUT/gitleaks.json") || r=$?
+          printf '### gitleaks: %s\n\n%s\n' "$scope" "$report" | tee "$OUT/gitleaks.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$r" -eq 2 ]; then echo "::error::the gitleaks report could not be read"; exit 1; fi
+          if [ "$r" -eq 1 ] || [ "$rc" -eq 1 ]; then echo "::error::gitleaks found possible secrets; see the run summary"; exit 1; fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: security-gitleaks
+          path: ${{ runner.temp }}/security/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  osv:
+    needs: switch
+    if: needs.switch.outputs.on == 'true' && needs.switch.outputs.osv == 'true'
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.switch.outputs.osv_version }}
+      SCAN_PATHS: ${{ needs.switch.outputs.osv_paths }}
+      CONFIG: ${{ needs.switch.outputs.osv_config }}
+      FAIL_ON: ${{ needs.switch.outputs.osv_fail_on }}
+      SARIF: ${{ needs.switch.outputs.sarif }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install osv-scanner
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          v=${VERSION#v}; f=osv-scanner_linux_amd64
+          base="https://github.com/google/osv-scanner/releases/download/v$v"
+          curl -sSfLO "$base/$f"
+          curl -sSfL "$base/osv-scanner_SHA256SUMS" | grep " $f\$" | sha256sum -c -
+          mkdir -p bin && install -m 755 "$f" bin/osv-scanner
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Exit 0 nothing found, 1 vulnerabilities found; anything else is a broken
+      # scan. No lockfile at all is a pass with nothing to report.
+      - name: Scan the dependencies
+        run: |
+          set -euo pipefail
+          OUT=$RUNNER_TEMP/security; mkdir -p "$OUT"
+          read -ra paths <<<"$SCAN_PATHS"
+          args=(scan source --recursive --allow-no-lockfiles)
+          [ -z "$CONFIG" ] || args+=(--config "$CONFIG")
+          rc=0; osv-scanner "${args[@]}" --format json --output-file "$OUT/osv.json" "${paths[@]}" || rc=$?
+          if [ "$rc" -gt 1 ] || [ ! -s "$OUT/osv.json" ]; then echo "::error::osv-scanner did not finish (exit $rc)"; exit 1; fi
+          if [ "$SARIF" = true ]; then
+            osv-scanner "${args[@]}" --format sarif --output-file "$OUT/osv.sarif" "${paths[@]}" >/dev/null 2>&1 || true
+          fi
+          r=0; report=$(bash .github/cicd/security/security.sh osv "$FAIL_ON" "$GITHUB_WORKSPACE/" < "$OUT/osv.json") || r=$?
+          printf '### osv-scanner\n\n%s\n' "$report" | tee "$OUT/osv.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$r" -eq 2 ]; then echo "::error::the osv-scanner report could not be read"; exit 1; fi
+          if [ "$r" -eq 1 ]; then echo "::error::vulnerable dependencies (SECURITY_OSV_FAIL_ON=$FAIL_ON); see the run summary"; exit 1; fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: security-osv
+          path: ${{ runner.temp }}/security/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  semgrep:
+    needs: switch
+    if: needs.switch.outputs.on == 'true' && needs.switch.outputs.semgrep == 'true'
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.switch.outputs.semgrep_version }}
+      CONFIGS: ${{ needs.switch.outputs.semgrep_config }}
+      SCAN_PATHS: ${{ needs.switch.outputs.semgrep_paths }}
+      MIN: ${{ needs.switch.outputs.semgrep_min_severity }}
+      BLOCKING: ${{ needs.switch.outputs.semgrep_blocking }}
+      SARIF: ${{ needs.switch.outputs.sarif }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # semgrep's own image at a pinned version, the checkout mounted read-only.
+      # Exit 0 is a finished scan, findings or not; anything else is broken,
+      # and so is a report holding an "error"-level entry.
+      - name: Scan the code
+        run: |
+          set -euo pipefail
+          OUT=$RUNNER_TEMP/security; mkdir -p "$OUT"
+          h=.github/cicd/security/security.sh
+          sev=$(bash "$h" severities "$MIN") || exit 1
+          read -ra paths <<<"$SCAN_PATHS"
+          args=(scan --metrics=off --disable-version-check --json-output=/out/semgrep.json)
+          for c in $CONFIGS; do args+=(--config "$c"); done
+          for s in $sev; do args+=(--severity "$s"); done
+          [ "$SARIF" != true ] || args+=(--sarif-output=/out/semgrep.sarif)
+          rc=0; docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e SEMGREP_SEND_METRICS=off \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$OUT:/out" -w /src \
+            "semgrep/semgrep:${VERSION#v}" semgrep "${args[@]}" "${paths[@]}" || rc=$?
+          if [ "$rc" -ne 0 ] || [ ! -s "$OUT/semgrep.json" ]; then echo "::error::semgrep did not finish (exit $rc)"; exit 1; fi
+          r=0; report=$(bash "$h" semgrep < "$OUT/semgrep.json") || r=$?
+          printf '### semgrep (%s and above)\n\n%s\n' "$MIN" "$report" | tee "$OUT/semgrep.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$r" -eq 2 ]; then echo "::error::semgrep did not complete; see the run summary"; exit 1; fi
+          if [ "$r" -eq 1 ]; then
+            if [ "$BLOCKING" = true ]; then echo "::error::semgrep findings; see the run summary"; exit 1; fi
+            echo "::warning::semgrep findings, not blocking (SECURITY_SEMGREP_BLOCKING=false); see the run summary"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: security-semgrep
+          path: ${{ runner.temp }}/security/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # Opt-in, and its own job so only this one holds security-events: write.
+  # Code scanning on a private repo needs a paid licence. Fork PRs get no write
+  # token, so they skip it.
+  sarif:
+    needs: [switch, gitleaks, osv, semgrep]
+    if: >-
+      always() && needs.switch.outputs.on == 'true' && needs.switch.outputs.sarif == 'true'
+      && (needs.gitleaks.result != 'skipped' || needs.osv.result != 'skipped' || needs.semgrep.result != 'skipped')
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # upload-sarif reads the run in a private repo
+      security-events: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: security-*
+          path: sarif
+      - name: gitleaks
+        if: hashFiles('sarif/security-gitleaks/*.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: sarif/security-gitleaks/gitleaks.sarif
+          category: gitleaks
+      - name: osv-scanner
+        if: hashFiles('sarif/security-osv/*.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: sarif/security-osv/osv.sarif
+          category: osv-scanner
+      - name: semgrep
+        if: hashFiles('sarif/security-semgrep/*.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: sarif/security-semgrep/semgrep.sarif
+          category: semgrep

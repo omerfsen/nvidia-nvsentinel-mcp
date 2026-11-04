@@ -1,0 +1,8 @@
+repo https://github.com/omerfsen/cicd
+ref v0.7.0
+commit d42b0c637a95f8dd092ec0a3b495bff28d556940
+file 6849b6f210030c13b7e606d782bebd4087038444f2f2f995e10d9054f07d2c1a .github/workflows/release-please.yml
+file d39858aa5b5626b36885dc0c33b1792ba2dbfeaf919fde76d12dad0736b02329 .github/cicd/release-please/check-release-pr.sh
+file f50d5d105dc5c306b7d7e97cc4450c2a740c1b568ff886c72d2a7358fb319326 .github/workflows/pr-title.yml
+file 90f0154d69a21205f5a2f96a8ecda2a409f9e1c0eed0d8c17f84acbbc4e64bf5 .github/workflows/security.yml
+file c2e238ab8fc6d53dd6851879fa8ef826f659855bdfb86bbab1c465ef70e99ec2 .github/cicd/security/security.sh

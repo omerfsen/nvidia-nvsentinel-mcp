@@ -1,0 +1,230 @@
+# Vendored from https://github.com/omerfsen/cicd (github/pipelines/release-please/); edit it
+# there and re-run its install.sh. Settings for THIS repo live in
+# .github/cicd/config, which install.sh never overwrites.
+#
+# Versions and releases: release-please reads the Conventional Commits that
+# land on main, keeps one release PR open (CHANGELOG.md, the manifest and the
+# repo's version files), and when that PR is merged, tags vX.Y.Z and publishes
+# a GitHub release.
+#
+# The PR is opened and merged as a GitHub App, not GITHUB_TOKEN: a PR opened
+# with GITHUB_TOKEN triggers no workflows, so CI would never report on it and
+# its required checks would block it. The App is a bypass actor on main's
+# ruleset, so this job merges the release PR itself - after
+# .github/cicd/release-please/check-release-pr.sh confirms it is the App's own PR and changes
+# nothing but CHANGELOG.md, the manifest and the VERSION_FILES from the config.
+# The merge pushes to main, which runs this again; that run cuts the tag.
+#
+# Versions stay on 0.x (release-please-config.json: initial-version 0.1.0 and
+# bump-minor-pre-major), and the merge check refuses 1.0.0 and later: that
+# release is cut only on the owner's word, with a `Release-As: 1.0.0` commit
+# footer, and merged by hand.
+#
+# Set up once per repo (cicd README, "Adopt in a repo"): repo variable
+# RELEASE_APP_ID and secret RELEASE_APP_KEY in the "release" environment,
+# limited to main. Until then every run stops with a notice and stays green.
+#
+# Kill switch: RELEASE_PLEASE_ENABLED=false in .github/cicd/config.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The App token does the writes; GITHUB_TOKEN only needs to read.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  # Where the release job runs (RELEASE_PLEASE_RUNNER, read from the commit
+  # that runs). The release job holds the App key: point it at a self-hosted
+  # runner only if that runner is yours and starts clean for every job.
+  switch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      runner: ${{ steps.s.outputs.runner }}
+    steps:
+      - id: s
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.sha }}
+          # true for a PR from a fork: its code never runs on a self-hosted runner.
+          FORK: ${{ github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          gh api "repos/$REPO/contents/.github/cicd/config?ref=$REF" --jq .content 2>/dev/null | base64 -d > "$RUNNER_TEMP/config" || true
+          conf() { sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1 | tr -d '"'; }
+          # Off (the release job's gate says so too): no runner to check.
+          enabled=$(conf RELEASE_PLEASE_ENABLED); enabled=${enabled:-$(conf RELEASE_ENABLED)}
+          if [ "${enabled:-true}" != "true" ]; then echo 'runner="ubuntu-24.04"' >> "$GITHUB_OUTPUT"; exit 0; fi
+          # Where the other jobs run: a runner label, or a JSON list of labels
+          # for a self-hosted runner. This job itself stays hosted, so a dead
+          # runner cannot stop it deciding. A fork PR always runs hosted.
+          runner() {  # runner <KEY>: the runs-on value, as JSON for fromJSON
+            local x j
+            x=$(sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1)  # raw: a JSON list keeps its quotes
+            case "$x" in
+              "") j='"ubuntu-24.04"' ;;
+              \[*) j=$(jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string" and test("^[A-Za-z0-9._-]+$")))' <<<"$x" 2>/dev/null) || j= ;;
+              *) x=$(tr -d '"' <<<"$x"); if [[ $x =~ ^[A-Za-z0-9._-]+$ ]]; then j=$(jq -nc --arg l "$x" '$l'); else j=; fi ;;
+            esac
+            if [ -z "$j" ]; then echo "::error::$1 must be a runner label or a JSON list of labels, not '$x'" >&2; return 1; fi
+            if [ "$FORK" = true ] && [ "$j" != '"ubuntu-24.04"' ]; then
+              echo "::notice::A PR from a fork runs on ubuntu-24.04, whatever $1 says" >&2; j='"ubuntu-24.04"'
+            fi
+            echo "$j"
+          }
+          r=$(runner RELEASE_PLEASE_RUNNER) || { echo 'runner="ubuntu-24.04"' >> "$GITHUB_OUTPUT"; exit 1; }
+          echo "runner=$r" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Release
+    # Only main's own runs: a manual run started from another branch would run
+    # that branch's copy of this file. The key lives in the "release"
+    # environment, whose deployment branches are limited to main, so such a
+    # run could not read it even if this line were edited away there.
+    needs: switch
+    if: github.ref == 'refs/heads/main'
+    environment: release
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 10
+    steps:
+      # main's own copy of the config and the check script; a release PR's
+      # branch is never checked out.
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      # Only says whether the key is there; the key itself stays out of the step.
+      - name: Switched on and set up?
+        id: gate
+        env:
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
+          HAS_KEY: ${{ secrets.RELEASE_APP_KEY != '' }}
+        run: |
+          conf() { sed -n "s/^$1=//p" .github/cicd/config 2>/dev/null | tail -1 | tr -d '"'; }
+          # RELEASE_ENABLED is the name cicd v0.1.0 used; still honoured.
+          enabled=$(conf RELEASE_PLEASE_ENABLED); enabled=${enabled:-$(conf RELEASE_ENABLED)}
+          files=$(conf VERSION_FILES)
+          if [ "${enabled:-true}" != "true" ]; then
+            echo "RELEASE_PLEASE_ENABLED is not true in .github/cicd/config; nothing runs"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$files" ]; then
+            echo "::error title=No VERSION_FILES::Set VERSION_FILES in .github/cicd/config (e.g. version.txt or package.json)."
+            exit 1
+          elif [ -z "$APP_ID" ] || [ "$HAS_KEY" != "true" ]; then
+            echo "::notice title=Release not set up::Set the RELEASE_APP_ID variable and the RELEASE_APP_KEY secret in the release environment (cicd README)."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "version_files=$files" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Minted per run, valid for an hour, scoped to this repo's installation.
+      - name: Mint a token as the release App
+        id: token
+        if: steps.gate.outputs.go == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+
+      - name: Release please
+        id: release
+        if: steps.gate.outputs.go == 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # Looks on every run, not only when release-please touched its PR, so a
+      # release PR left open by an earlier run is picked up again. Candidates
+      # are open PRs on a release-please-- branch; .github/cicd/release-please/check-release-pr.sh
+      # decides (the exact branch name, the App as author, the files, a
+      # version below 1.0.0). Never read from the action's `pr` output: it is
+      # empty on a run that opens no PR, and fromJSON('') breaks the whole
+      # workflow file. At most one release PR is merged per run.
+      - name: Check and merge the release PR
+        id: merge
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          SLUG: ${{ steps.token.outputs.app-slug }}
+          VERSION_FILES: ${{ steps.gate.outputs.version_files }}
+        run: |
+          set -euo pipefail
+          merged="" refused=""
+          # Written on every exit, so a merge that happened is reported even
+          # when a later call fails.
+          finish() {
+            local rc=$?
+            {
+              echo "merged=$merged"
+              echo "refused=${refused# }"
+              if [ -n "$refused" ]; then echo "outcome=refused"
+              elif [ "$rc" -ne 0 ]; then echo "outcome=failed"
+              elif [ -n "$merged" ]; then echo "outcome=merged"
+              else echo "outcome=none"; fi
+            } >> "$GITHUB_OUTPUT"
+          }
+          trap finish EXIT
+          prs=$(gh pr list --repo "$REPO" --base main --state open --limit 100 --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("release-please--")) | .number')
+          for pr in $prs; do
+            # This merge skips the required review, so it only goes through for
+            # exactly what release-please writes.
+            gh api "repos/$REPO/pulls/$pr" > "$RUNNER_TEMP/pr.json"
+            gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" > "$RUNNER_TEMP/files.json"
+            if ! why=$(bash .github/cicd/release-please/check-release-pr.sh "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/files.json" 2>&1); then
+              echo "::error title=Release PR #$pr not merged::$why"
+              refused="$refused #$pr"
+              continue
+            fi
+            if [ -n "$merged" ]; then
+              echo "::notice::Release PR #$pr waits for the next run; one release per run."
+              continue
+            fi
+            sha=$(jq -r .head.sha "$RUNNER_TEMP/pr.json")
+            echo "merging release PR #$pr at ${sha:0:7}"
+            # --admin EXERCISES the App's ruleset bypass; it does not grant it.
+            # Without it gh does an ordinary merge, the required checks still
+            # apply, and GitHub refuses it. --match-head-commit merges exactly
+            # the commit checked above.
+            gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --admin --match-head-commit "$sha"
+            merged="#$pr"
+          done
+          [ -z "$refused" ]
+
+      # Says what the merge step really did, also after it failed.
+      - name: Report
+        if: steps.gate.outputs.go == 'true' && !cancelled()
+        env:
+          RELEASED: ${{ steps.release.outputs.release_created }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          STEP: ${{ steps.merge.outcome }}
+          OUTCOME: ${{ steps.merge.outputs.outcome }}
+          MERGED: ${{ steps.merge.outputs.merged }}
+          REFUSED: ${{ steps.merge.outputs.refused }}
+        run: |
+          if [ "$RELEASED" = "true" ]; then
+            echo "::notice title=Released::$TAG is tagged and published."
+          fi
+          case "$OUTCOME" in
+            merged) echo "::notice title=Releasing::Release PR $MERGED merged; the run it triggers creates the tag." ;;
+            refused) echo "::warning title=Not merged::Release PR $REFUSED refused by the checks; see the errors above.${MERGED:+ Merged $MERGED; the run it triggers creates the tag.}" ;;
+            failed) echo "::warning title=Release step failed::The merge step failed; see its log.${MERGED:+ It had merged $MERGED; the run it triggers creates the tag.}" ;;
+            none) [ "$RELEASED" = "true" ] || echo "::notice title=Nothing to release::No open release PR; no feat: or fix: commits since the last tag." ;;
+            *) echo "::warning title=Release step failed::The merge step ended with '$STEP' before deciding; see its log." ;;
+          esac
