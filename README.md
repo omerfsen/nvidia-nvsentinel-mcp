@@ -52,9 +52,8 @@ can start it. All the commands below leave changes off; add
 go install github.com/omerfsen/nvidia-nvsentinel-mcp@latest
 ```
 
-The binary is `nvidia-nvsentinel-mcp`, in `$(go env GOPATH)/bin`. Until the first release is
-tagged, use `@main` instead of `@latest`. Or use the image, once it is published to Docker Hub. The
-image never runs as root.
+The binary is `nvidia-nvsentinel-mcp`, in `$(go env GOPATH)/bin`. Or use the image,
+`docker.io/omerfsen/nvidia-nvsentinel-mcp`, which never runs as root and is about 32 MB.
 
 **2. Add it to your client.** For Claude Code:
 
@@ -69,7 +68,7 @@ claude mcp add nvsentinel-lab -- docker run --rm -i --read-only --cap-drop=ALL \
   --security-opt=no-new-privileges --user "$(id -u):$(id -g)" --memory=128m --cpus=1 \
   --pids-limit=64 --network=kind \
   --volume "$HOME/.kube/nvsentinel-lab-mcp-docker.yaml:/kube/config:ro" \
-  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest>
+  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:bdbbbd1892b93fe142b1ef74363b79759c03460aaffad0e3ffe46d7e3f751944
 ```
 
 Other clients take the same command in their MCP config:
@@ -87,8 +86,8 @@ npx skills add omerfsen/nvidia-nvsentinel-mcp --skill nvsentinel-lab
 ```
 
 The GitHub CLI has no `gh mcp add` as of v2.103.2: `gh skill` installs skills, and MCP servers
-go in through the client. The official MCP Registry entry is ready in `server.json` but not
-published, as the image must exist first.
+go in through the client. An entry for the official MCP Registry is ready in `server.json` but
+not published.
 
 ## Run the tests on kind
 
@@ -130,7 +129,8 @@ Code in this directory and approve the server from `.mcp.json`. That one allows 
   needs metadata-collector, which needs NVML.
 - The syslog monitor: it reads kernel-transport journal entries, which a kind node
   cannot safely produce, so it is off on kind.
-- Pulling a published image, or checking its signature and attestations by hand.
+- The image's cosign signature and SBOM attestation by hand: they are attached, and only its
+  build provenance was verified (`gh attestation verify`).
 - `make test` in CI: cicd has no Go test pipeline yet.
 
 Every step, failure and dead end is in [docs/build-log.md](docs/build-log.md).
