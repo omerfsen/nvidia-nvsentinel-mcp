@@ -1,0 +1,5 @@
+{
+  "isError": true,
+  "message": "refusing: the context is \"rke2-production\", not the lab's \"kind-nvsentinel-lab\"",
+  "tool": "inject_fault"
+}

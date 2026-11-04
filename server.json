@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.omerfsen/nvidia-nvsentinel-mcp",
+  "title": "NVSentinel Lab",
+  "description": "Test NVIDIA NVSentinel on a kind lab: read its state and inject faults into a simulated GPU.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/omerfsen/nvidia-nvsentinel-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/omerfsen/nvidia-nvsentinel-mcp:0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NVSENTINEL_MCP_ALLOW_CHANGES",
+          "description": "Exactly true allows the change tools, on a kind cluster only. Off when unset.",
+          "isRequired": false
+        },
+        {
+          "name": "NVSENTINEL_MCP_LAB_CONTEXT",
+          "description": "The kubeconfig context changes need. Must start with kind-. Default kind-nvsentinel-lab.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

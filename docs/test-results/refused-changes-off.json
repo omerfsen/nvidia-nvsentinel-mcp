@@ -1,0 +1,5 @@
+{
+  "isError": true,
+  "message": "refusing: changes are off; the operator sets NVSENTINEL_MCP_ALLOW_CHANGES=true to allow them",
+  "tool": "inject_fault"
+}

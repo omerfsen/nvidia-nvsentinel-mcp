@@ -1,0 +1,91 @@
+{
+  "passed": true,
+  "scenario": "xid95",
+  "seconds": 123.3,
+  "steps": [
+    {
+      "detail": "GpuDcgmConnectivityFailure=False",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:dcgm_connected"
+    },
+    {
+      "detail": "14 checks reported, failing: []",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:healthy"
+    },
+    {
+      "detail": "unschedulable=false",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:uncordoned"
+    },
+    {
+      "detail": "readyReplicas=1, on the GPU node: true",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:workload_running"
+    },
+    {
+      "detail": "pod nvidia-dcgm-7rg4k",
+      "ok": true,
+      "seconds": 0,
+      "step": "inject_xid95"
+    },
+    {
+      "detail": "failing: [GpuMemWatch]",
+      "ok": true,
+      "seconds": 12,
+      "step": "wait:fault_detected"
+    },
+    {
+      "detail": "unschedulable=true",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:cordoned"
+    },
+    {
+      "detail": "workload pods on []",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:workload_evicted"
+    },
+    {
+      "detail": "state=drain-succeeded",
+      "ok": true,
+      "seconds": 72.1,
+      "step": "wait:drain_succeeded"
+    },
+    {
+      "detail": "deleted nvidia-dcgm-7rg4k",
+      "ok": true,
+      "seconds": 6.1,
+      "step": "clear_fault"
+    },
+    {
+      "detail": "14 checks reported, failing: []",
+      "ok": true,
+      "seconds": 33,
+      "step": "wait:healthy"
+    },
+    {
+      "detail": "unschedulable=false",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:uncordoned"
+    },
+    {
+      "detail": "state=",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:state_cleared"
+    },
+    {
+      "detail": "readyReplicas=1, on the GPU node: true",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:workload_running"
+    }
+  ]
+}

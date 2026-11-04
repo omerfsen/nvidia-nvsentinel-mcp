@@ -1,9 +1,5 @@
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.lab/
-graphify-out
+/bin/
+/.lab/
 *.kubeconfig
-dist/
-*.egg-info/
+graphify-out
+code-quality-report.json
