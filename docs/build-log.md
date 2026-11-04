@@ -127,6 +127,12 @@ Windows, so every kubeconfig would have been refused there. The check now skips 
 
 Stable file names, with no version, keep `/releases/latest/download/...` working.
 
+**Result, v0.2.0:** the README's commands downloaded `linux/amd64`, and its checksum and provenance
+verified (`go-binaries.yml` at `refs/tags/v0.2.0`). That binary reports 0.2.0 and passes all 7 e2e tests that
+apply on kind, including SIGTERM. The other five checksums match and each file is the right format, and
+Windows amd64's provenance was checked too. None of those five has been run. The SBOM lists 118 components.
+Image: `sha256:07caf7927edf42f34ffffb43bfb6dca370f2797ff882959b84261c5adf5fe988`.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, and checking the image's cosign signature and SBOM by hand.
