@@ -205,9 +205,24 @@ func TestToolsAreListedAndMarkedReadOrChange(t *testing.T) {
 		assert.NotEmpty(t, tool.Description, tool.Name)
 		assert.NotEmpty(t, tool.Title, tool.Name)
 		assert.Equal(t, tool.Title, tool.Annotations.Title, tool.Name)
+		assert.Regexp(t, "^[A-Za-z0-9_.-]{1,64}$", tool.Name, "the spec's characters, and the directory's length")
 	}
 
 	assert.Equal(t, want, got)
+}
+
+func TestEveryParameterIsDescribed(t *testing.T) {
+	h := start(t, labConfig(), labContext, passExec{})
+
+	tools, err := h.session.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+
+	for _, tool := range tools.Tools {
+		properties := asObject(asObject(tool.InputSchema)["properties"])
+		for name, property := range properties {
+			assert.NotEmpty(t, asObject(property)["description"], tool.Name+"."+name)
+		}
+	}
 }
 
 func TestOnlyToolsAreAdvertised(t *testing.T) {

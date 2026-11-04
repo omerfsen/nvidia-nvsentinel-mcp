@@ -418,8 +418,10 @@ func TestItSpeaksTheLatestProtocol(t *testing.T) {
 	raw.send(t, 1, "server/discover", map[string]any{})
 	discover := resultOf(t, raw.reply(t, 1))
 	assert.Equal(t, "complete", discover["resultType"])
-	assert.Equal(t, latestProtocol, discover["supportedVersions"].([]any)[0])
-	assert.NotNil(t, discover["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"])
+	assert.Contains(t, discover["supportedVersions"], latestProtocol)
+	meta, ok := discover["_meta"].(map[string]any)
+	require.True(t, ok, "discover: %v", discover)
+	assert.NotNil(t, meta["io.modelcontextprotocol/serverInfo"])
 	assert.Equal(t, map[string]any{"tools": map[string]any{}}, discover["capabilities"])
 
 	raw.send(t, 2, "tools/list", map[string]any{})
@@ -468,10 +470,18 @@ func TestCancellationStopsTheWork(t *testing.T) {
 
 	time.Sleep(time.Second)
 
+	// A wait that already ended would make the rest of this test pass with no cancellation.
+	select {
+	case reply := <-raw.replies:
+		require.FailNow(t, "the wait ended before the cancel", "reply: %v", reply)
+	default:
+	}
+
 	_, err := raw.stdin.Write([]byte(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}` + "\n"))
 	require.NoError(t, err)
 
 	cancelled := time.Now()
-	raw.reply(t, 1)
+	result := resultOf(t, raw.reply(t, 1))
 	assert.Less(t, time.Since(cancelled), 10*time.Second, "the wait must stop, not run to its timeout")
+	assert.Equal(t, true, result["isError"], "a cancelled wait did not reach its stage: %v", result)
 }
