@@ -35,7 +35,7 @@ test:
 	go test -race -count=1 ./pkg/...
 
 image:
-	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+	docker build -t $(IMAGE) .
 
 lab-up:
 	lab/up.sh
