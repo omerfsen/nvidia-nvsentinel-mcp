@@ -46,20 +46,50 @@ The server needs a kubeconfig. For the kind lab, `make lab-token` writes one (se
 can start it. All the commands below leave changes off; add
 `-e NVSENTINEL_MCP_ALLOW_CHANGES=true` only for a client that should change the lab.
 
-**1. Install the server**, as a binary (needs Go 1.27):
+**1. Install the server.** Download the binary for your platform from the
+[latest release](https://github.com/omerfsen/nvidia-nvsentinel-mcp/releases/latest):
+
+| Platform | File |
+|---|---|
+| Linux, x86-64 | `nvidia-nvsentinel-mcp-linux-amd64` |
+| Linux, Arm | `nvidia-nvsentinel-mcp-linux-arm64` |
+| macOS, Intel | `nvidia-nvsentinel-mcp-darwin-amd64` |
+| macOS, Apple silicon | `nvidia-nvsentinel-mcp-darwin-arm64` |
+| Windows, x86-64 | `nvidia-nvsentinel-mcp-windows-amd64.exe` |
+| Windows, Arm | `nvidia-nvsentinel-mcp-windows-arm64.exe` |
+
+On Linux and macOS, set `FILE` to yours:
 
 ```shell
-go install github.com/omerfsen/nvidia-nvsentinel-mcp@latest
+FILE=nvidia-nvsentinel-mcp-linux-amd64
+BASE=https://github.com/omerfsen/nvidia-nvsentinel-mcp/releases/latest/download
+curl -fsSLO "$BASE/$FILE"
+curl -fsSL "$BASE/checksums.txt" | grep " $FILE\$" | sha256sum -c -   # macOS: shasum -a 256 -c -
+gh attestation verify "$FILE" --repo omerfsen/nvidia-nvsentinel-mcp    # optional: who built it
+install -m 755 "$FILE" ~/.local/bin/nvidia-nvsentinel-mcp
 ```
 
-The binary is `nvidia-nvsentinel-mcp`, in `$(go env GOPATH)/bin`. Or use the image,
+On Windows, in PowerShell, keep the kubeconfig where only you can read it, as the server cannot check
+that there:
+
+```powershell
+$File = "nvidia-nvsentinel-mcp-windows-amd64.exe"
+$Base = "https://github.com/omerfsen/nvidia-nvsentinel-mcp/releases/latest/download"
+Invoke-WebRequest "$Base/$File" -OutFile "$HOME\bin\nvidia-nvsentinel-mcp.exe"
+```
+
+Each release also has `checksums.txt` and an SBOM, `nvidia-nvsentinel-mcp.sbom.cdx.json`. Only
+Linux on x86-64 has been run; the others are built but untested. Or install with Go 1.27:
+`go install github.com/omerfsen/nvidia-nvsentinel-mcp@latest`. Or use the image,
 `docker.io/omerfsen/nvidia-nvsentinel-mcp`, which never runs as root and is about 32 MB.
 
-**2. Add it to your client.** For Claude Code:
+**2. Add it to your client.** For Claude Code, with the binary on your `PATH`:
 
 ```shell
 claude mcp add nvsentinel-lab -- nvidia-nvsentinel-mcp
 ```
+
+Or give the full path to the binary, such as `~/.local/bin/nvidia-nvsentinel-mcp`.
 
 With the image:
 
@@ -71,7 +101,8 @@ claude mcp add nvsentinel-lab -- docker run --rm -i --read-only --cap-drop=ALL \
   docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:bdbbbd1892b93fe142b1ef74363b79759c03460aaffad0e3ffe46d7e3f751944
 ```
 
-Other clients take the same command in their MCP config:
+Other clients take the same command in their MCP config. Use the full path if the binary is not on
+the `PATH` your client sees:
 
 ```json
 { "mcpServers": { "nvsentinel-lab": { "command": "nvidia-nvsentinel-mcp" } } }
@@ -122,6 +153,7 @@ Code in this directory and approve the server from `.mcp.json`. That one allows 
 
 ## What is not tested
 
+- The binaries for anything but Linux on x86-64: they are cross-compiled and not run.
 - A real GPU. The RTX 4080 SUPER is not on NVSentinel's validated list, and real DCGM
   health is still to be checked.
 - AICR's install on NVKE, as opposed to kind.
@@ -131,7 +163,6 @@ Code in this directory and approve the server from `.mcp.json`. That one allows 
   cannot safely produce, so it is off on kind.
 - The image's cosign signature and SBOM attestation by hand: they are attached, and only its
   build provenance was verified (`gh attestation verify`).
-- `make test` in CI: cicd has no Go test pipeline yet.
 
 Every step, failure and dead end is in [docs/build-log.md](docs/build-log.md).
 

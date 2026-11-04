@@ -1,0 +1,212 @@
+# Vendored from https://github.com/omerfsen/cicd (github/pipelines/go-binaries/); edit it
+# there and re-run its install.sh. Settings for THIS repo live in
+# .github/cicd/config, which install.sh never overwrites.
+#
+# go-binaries - tests a Go program, builds it for several platforms, and attaches the
+# binaries to its GitHub release.
+#   - Pull request, push to main, manual run: go vet, go test -race, a build of every target.
+#   - Push of a vX.Y.Z tag: the same, then upload the binaries, checksums.txt and an SBOM to
+#     that tag's release, with build provenance. Runs in GO_BINARIES_ENVIRONMENT.
+#
+# Kill switch: GO_BINARIES_ENABLED=false in .github/cicd/config.
+name: go-binaries
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: go-binaries-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Reads this repo's settings from the BASE of a PR (or the pushed commit),
+  # never from the PR's own head, so a PR cannot switch off its own checks or
+  # change the settings it is checked with.
+  switch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      on: ${{ steps.s.outputs.on }}
+      runner: ${{ steps.s.outputs.runner }}
+      name: ${{ steps.s.outputs.name }}
+      dir: ${{ steps.s.outputs.dir }}
+      package: ${{ steps.s.outputs.package }}
+      targets: ${{ steps.s.outputs.targets }}
+      version_var: ${{ steps.s.outputs.version_var }}
+      environment: ${{ steps.s.outputs.environment }}
+    steps:
+      - id: s
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.base.sha || github.sha }}
+          # true for a PR from a fork: its code never runs on a self-hosted runner.
+          FORK: ${{ github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          gh api "repos/$REPO/contents/.github/cicd/config?ref=$REF" --jq .content 2>/dev/null | base64 -d > "$RUNNER_TEMP/config" || true
+          conf() { sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1 | tr -d '"'; }
+          if [ "$(conf GO_BINARIES_ENABLED)" = "false" ]; then
+            echo "GO_BINARIES_ENABLED is false in .github/cicd/config; nothing runs"; printf 'on=false\nrunner="ubuntu-24.04"\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          v() { local x; x=$(conf "$1"); echo "${x:-$2}"; }
+          # Where the other jobs run: a runner label, or a JSON list of labels
+          # for a self-hosted runner. This job itself stays hosted, so a dead
+          # runner cannot stop it deciding. A fork PR always runs hosted.
+          runner() {  # runner <KEY>: the runs-on value, as JSON for fromJSON
+            local x j
+            x=$(sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1)  # raw: a JSON list keeps its quotes
+            case "$x" in
+              "") j='"ubuntu-24.04"' ;;
+              \[*) j=$(jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string" and test("^[A-Za-z0-9._-]+$")))' <<<"$x" 2>/dev/null) || j= ;;
+              *) x=$(tr -d '"' <<<"$x"); if [[ $x =~ ^[A-Za-z0-9._-]+$ ]]; then j=$(jq -nc --arg l "$x" '$l'); else j=; fi ;;
+            esac
+            if [ -z "$j" ]; then echo "::error::$1 must be a runner label or a JSON list of labels, not '$x'" >&2; return 1; fi
+            if [ "$FORK" = true ] && [ "$j" != '"ubuntu-24.04"' ]; then
+              echo "::notice::A PR from a fork runs on ubuntu-24.04, whatever $1 says" >&2; j='"ubuntu-24.04"'
+            fi
+            echo "$j"
+          }
+          r=$(runner GO_BINARIES_RUNNER) || { echo 'runner="ubuntu-24.04"' >> "$GITHUB_OUTPUT"; exit 1; }
+          echo "runner=$r" >> "$GITHUB_OUTPUT"
+          # A key that is present but empty stamps nothing, so this one is read as is.
+          if grep -q '^GO_BINARIES_VERSION_VAR=' "$RUNNER_TEMP/config"; then var=$(conf GO_BINARIES_VERSION_VAR); else var=main.version; fi
+          {
+            echo "on=true"
+            echo "name=$(v GO_BINARIES_NAME "${REPO#*/}")"
+            echo "dir=$(v GO_BINARIES_DIR .)"
+            echo "package=$(v GO_BINARIES_PACKAGE .)"
+            echo "targets=$(v GO_BINARIES_TARGETS 'linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64')"
+            echo "version_var=$var"
+            echo "environment=$(v GO_BINARIES_ENVIRONMENT binaries)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: switch
+    if: needs.switch.outputs.on == 'true'
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GOTOOLCHAIN: local
+      GOFLAGS: -mod=readonly
+      NAME: ${{ needs.switch.outputs.name }}
+      GO_DIR: ${{ needs.switch.outputs.dir }}
+      PACKAGE: ${{ needs.switch.outputs.package }}
+      GO_TARGETS: ${{ needs.switch.outputs.targets }}
+      VERSION_VAR: ${{ needs.switch.outputs.version_var }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No cache: what is built here can reach a release.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ needs.switch.outputs.dir }}/go.mod
+          cache: false
+      - name: Vet
+        working-directory: ${{ needs.switch.outputs.dir }}
+        run: go vet ./...
+      - name: Test
+        working-directory: ${{ needs.switch.outputs.dir }}
+        run: go test -race -count=1 ./...
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          helper=$PWD/.github/cicd/go-binaries/binaries.sh
+          out=$PWD/dist
+          mkdir -p "$out"
+          version=$(bash "$helper" version "$GITHUB_REF")
+          # A branch or PR build is stamped with its commit, and never released.
+          version=${version:-$GITHUB_SHA}
+          flags="-s -w"
+          if [ -n "$VERSION_VAR" ]; then flags="$flags -X $VERSION_VAR=$version"; fi
+          read -ra requested <<<"$GO_TARGETS"
+          mapfile -t targets < <(bash "$helper" targets "${requested[@]}")
+          cd "$GO_DIR"
+          for target in "${targets[@]}"; do
+            file=$(bash "$helper" asset "$NAME" "$target")
+            GOOS=${target%/*} GOARCH=${target#*/} go build -trimpath -ldflags "$flags" -o "$out/$file" "$PACKAGE"
+          done
+          ls -l "$out"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binaries
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [switch, build]
+    if: >-
+      needs.switch.outputs.on == 'true' && github.event_name == 'push'
+      && startsWith(github.ref, 'refs/tags/v')
+    environment: ${{ needs.switch.outputs.environment }}
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 20
+    permissions:
+      contents: write # upload to the release
+      id-token: write # build provenance
+      attestations: write # build provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries
+          path: dist
+      - name: SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: rootfs
+          scan-ref: dist
+          format: cyclonedx
+          output: sbom.cdx.json
+      - name: Checksums
+        env:
+          NAME: ${{ needs.switch.outputs.name }}
+        run: |
+          set -euo pipefail
+          mv sbom.cdx.json "dist/$NAME.sbom.cdx.json"
+          cd dist
+          sha256sum -- * > "$RUNNER_TEMP/checksums.txt"
+          mv "$RUNNER_TEMP/checksums.txt" checksums.txt
+          cat checksums.txt
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=${GITHUB_REF#refs/tags/}
+          for _ in $(seq 1 30); do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then break; fi
+            sleep 10
+          done
+          # No --clobber: a published file is never replaced.
+          gh release upload "$tag" dist/* --repo "$GITHUB_REPOSITORY"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Binaries"
+            echo '```'
+            cat dist/checksums.txt 2>/dev/null || echo "none"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
