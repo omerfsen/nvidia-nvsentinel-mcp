@@ -133,6 +133,12 @@ apply on kind, including SIGTERM. The other five checksums match and each file i
 Windows amd64's provenance was checked too. None of those five has been run. The SBOM lists 118 components.
 Image: `sha256:07caf7927edf42f34ffffb43bfb6dca370f2797ff882959b84261c5adf5fe988`.
 
+## Step 10: Flags (2026-11-04)
+
+Run by hand, the released binary printed nothing and looked hung. It was waiting for a client on stdin,
+as a stdio server does. It now logs one line to stderr on start, and has `-h`, `-v` and `-d`. Stdout
+stays empty for the MCP protocol.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, and checking the image's cosign signature and SBOM by hand.

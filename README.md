@@ -83,6 +83,10 @@ Linux on x86-64 has been run; the others are built but untested. Or install with
 `go install github.com/omerfsen/nvidia-nvsentinel-mcp@latest`. Or use the image,
 `docker.io/omerfsen/nvidia-nvsentinel-mcp`, which never runs as root and is about 32 MB.
 
+Check it with `nvidia-nvsentinel-mcp --version`. Run with no flags, it logs one line to stderr and then
+waits for an MCP client on stdin, so it looks idle: that is normal, and Ctrl-C stops it. `--help` lists
+the flags, and `--debug` logs each tool call and cluster detail to stderr.
+
 **2. Add it to your client.** For Claude Code, with the binary on your `PATH`:
 
 ```shell
