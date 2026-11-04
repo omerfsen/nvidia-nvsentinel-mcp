@@ -1,12 +1,12 @@
 repo https://github.com/omerfsen/cicd
-ref v0.9.0
-commit 72840c4cd1ea9c0ae0b5cdd5289f51053b0d88c4
+ref v0.10.0
+commit ce376f71c25220b7f9cd7911c7d23302c8a3beeb
 file 6849b6f210030c13b7e606d782bebd4087038444f2f2f995e10d9054f07d2c1a .github/workflows/release-please.yml
 file d39858aa5b5626b36885dc0c33b1792ba2dbfeaf919fde76d12dad0736b02329 .github/cicd/release-please/check-release-pr.sh
 file f50d5d105dc5c306b7d7e97cc4450c2a740c1b568ff886c72d2a7358fb319326 .github/workflows/pr-title.yml
 file 90f0154d69a21205f5a2f96a8ecda2a409f9e1c0eed0d8c17f84acbbc4e64bf5 .github/workflows/security.yml
 file c2e238ab8fc6d53dd6851879fa8ef826f659855bdfb86bbab1c465ef70e99ec2 .github/cicd/security/security.sh
-file 686d019d54cfc6b0885acd2b95e989cac90ff7fc0153580c227cffc4ee4ac439 .github/workflows/docker.yml
+file 0c214c6dfc03b1f2f67c1139322ff7c75a127bff3f5c8a2db4a5106650507b74 .github/workflows/docker.yml
 file ad734c3a6867922d43ea502ae12280992abdb9fd3e6569fc639fc2376abe85a2 .github/cicd/docker/image.sh
 file dfb6e18c8f7623b07fb96596a0ddaa2b8c2b3169a168c4859b299088b48eb223 .github/workflows/go-binaries.yml
 file 8a90e73e073687ac462604b08d32c094a29be4fdfa8b1942b08cfcef6bd36435 .github/cicd/go-binaries/binaries.sh
