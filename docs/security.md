@@ -108,7 +108,8 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
 - No credentials in the image. `.dockerignore` lets in only what the build needs.
 - Scanned with Trivy and OSV: no fixable CRITICAL or HIGH. The cicd `docker` pipeline repeats
   the Trivy scan before pushing, then signs the digest with cosign and attaches an SBOM and
-  build provenance. That pipeline's Docker Hub push has not run yet.
+  build provenance. v0.1.0's provenance was verified with `gh attestation verify`; its signature
+  and SBOM are attached, but were not checked by hand.
 
 Run it with everything off, and pin the digest:
 
@@ -116,7 +117,7 @@ Run it with everything off, and pin the digest:
 docker run --rm -i --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --user "$(id -u):$(id -g)" --memory=128m --cpus=1 --pids-limit=64 --network=kind \
   --volume "$HOME/.kube/nvsentinel-lab-mcp-docker.yaml:/kube/config:ro" \
-  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest>
+  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:bdbbbd1892b93fe142b1ef74363b79759c03460aaffad0e3ffe46d7e3f751944
 ```
 
 `--network=kind` is not a strict limit: that network is shared by every kind cluster on the host
@@ -124,9 +125,11 @@ and can reach the host's gateway. It still beats `--network=host`, so do not use
 that one file, never `~/.kube`. Add `--env NVSENTINEL_MCP_ALLOW_CHANGES=true` only for a run that should
 change the lab. The e2e tests ran the image with exactly these flags.
 
-Verify what you pull:
+Verify what you pull, with the digest of the release you use:
 
 ```shell
+gh attestation verify oci://docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest> \
+  --repo omerfsen/nvidia-nvsentinel-mcp
 cosign verify docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest> \
   --certificate-identity-regexp '^https://github.com/omerfsen/nvidia-nvsentinel-mcp/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com

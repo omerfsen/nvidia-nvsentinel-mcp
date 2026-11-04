@@ -105,6 +105,17 @@ is still two steps.
 
 NICo's `nico-mcp` was the nearest thing to a house style. See [upstream.md](upstream.md).
 
+## Step 8: First release (2026-11-04)
+
+The default App name, `omerfsen-nvidia-nvsentinel-mcp-release`, is 38 characters, and GitHub allows
+34: the App is `omerfsen-nvsentinel-mcp-release`. With cicd v0.8.0's `docker` pipeline and
+release-please on, the App opened and merged its release PR, tagged v0.1.0, and the tag pushed the image.
+
+`docker.io/omerfsen/nvidia-nvsentinel-mcp:0.1.0`,
+`sha256:bdbbbd1892b93fe142b1ef74363b79759c03460aaffad0e3ffe46d7e3f751944`: reports version 0.1.0, runs as 65532, passes every e2e test that applies to an
+image on kind, and Trivy is clean. `gh attestation verify` confirms it was built by `docker.yml` at
+`refs/tags/v0.1.0`. Three Sigstore bundles are attached to it (signature, SBOM, provenance).
+
 ## Not run yet
 
-A real GPU, AICR on NVKE, remediation, and pushing the image.
+A real GPU, AICR on NVKE, remediation, and checking the image's cosign signature and SBOM by hand.
