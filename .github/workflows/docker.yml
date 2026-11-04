@@ -51,6 +51,7 @@ jobs:
       scan_exit: ${{ steps.s.outputs.scan_exit }}
       sign: ${{ steps.s.outputs.sign }}
       attest: ${{ steps.s.outputs.attest }}
+      cache: ${{ steps.s.outputs.cache }}
       environment: ${{ steps.s.outputs.environment }}
       azure_tenant_id: ${{ steps.s.outputs.azure_tenant_id }}
       azure_subscription_id: ${{ steps.s.outputs.azure_subscription_id }}
@@ -99,6 +100,7 @@ jobs:
           blocks=$(bool DOCKER_SCAN_BLOCKS true) || exit 1
           sign=$(bool DOCKER_SIGN true) || exit 1
           attest=$(bool DOCKER_ATTEST true) || exit 1
+          cache=$(bool DOCKER_CACHE true) || exit 1
           {
             echo "on=true"
             echo "context=$(v DOCKER_CONTEXT .)"
@@ -109,6 +111,7 @@ jobs:
             echo "scan_exit=$([ "$blocks" = true ] && echo 1 || echo 0)"
             echo "sign=$sign"
             echo "attest=$attest"
+            echo "cache=$cache"
             echo "environment=$(v DOCKER_ENVIRONMENT registry)"
             echo "azure_tenant_id=$(v DOCKER_AZURE_TENANT_ID '')"
             echo "azure_subscription_id=$(v DOCKER_AZURE_SUBSCRIPTION_ID '')"
@@ -152,8 +155,9 @@ jobs:
           load: true
           push: false
           tags: scan-target:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: ${{ needs.switch.outputs.cache != 'true' }}
+          cache-from: ${{ needs.switch.outputs.cache == 'true' && 'type=gha' || '' }}
+          cache-to: ${{ needs.switch.outputs.cache == 'true' && 'type=gha,mode=max' || '' }}
       - name: Image scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -227,8 +231,9 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: ${{ needs.switch.outputs.cache != 'true' }}
+          cache-from: ${{ needs.switch.outputs.cache == 'true' && 'type=gha' || '' }}
+          cache-to: ${{ needs.switch.outputs.cache == 'true' && 'type=gha,mode=max' || '' }}
       - name: Image scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

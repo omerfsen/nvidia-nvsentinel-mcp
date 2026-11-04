@@ -29,6 +29,8 @@ DOCKER_SCAN_SEVERITY=CRITICAL,HIGH
 DOCKER_SCAN_BLOCKS=true
 DOCKER_SIGN=true
 DOCKER_ATTEST=true
+# Every image is built from scratch, so a release holds nothing from an earlier run.
+DOCKER_CACHE=false
 
 # go-binaries: go vet, go test -race and a build of every target on each PR, with the binaries
 # as a workflow artifact. A vX.Y.Z tag attaches them to its release, in the "binaries"
