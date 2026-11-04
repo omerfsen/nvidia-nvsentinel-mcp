@@ -27,6 +27,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -202,9 +203,36 @@ func TestToolsAreListedAndMarkedReadOrChange(t *testing.T) {
 		require.NotNil(t, tool.Annotations.DestructiveHint, tool.Name)
 		assert.Equal(t, !tool.Annotations.ReadOnlyHint, *tool.Annotations.DestructiveHint, tool.Name)
 		assert.NotEmpty(t, tool.Description, tool.Name)
+		assert.NotEmpty(t, tool.Title, tool.Name)
+		assert.Equal(t, tool.Title, tool.Annotations.Title, tool.Name)
 	}
 
 	assert.Equal(t, want, got)
+}
+
+func TestOnlyToolsAreAdvertised(t *testing.T) {
+	h := start(t, labConfig(), labContext, passExec{})
+
+	capabilities := h.session.InitializeResult().Capabilities
+	assert.Nil(t, capabilities.Logging, "the spec deprecates logging")
+	require.NotNil(t, capabilities.Tools)
+	assert.False(t, capabilities.Tools.ListChanged, "the tool list never changes")
+}
+
+func TestToolCallsAreRateLimited(t *testing.T) {
+	h := start(t, labConfig(), labContext, passExec{})
+	h.server.calls = rate.NewLimiter(0, 1)
+
+	assert.False(t, h.call(t, "list_scenarios", nil).IsError, "the first call fits")
+
+	result := h.call(t, "list_scenarios", nil)
+	assert.True(t, result.IsError)
+	assert.Contains(t, text(result), "too many calls")
+
+	result = h.call(t, "inject_fault", map[string]any{"xid": 95})
+	assert.True(t, result.IsError)
+	assert.False(t, h.changed(), "a limited change never reaches the cluster")
+	assert.Contains(t, h.audit.String(), `"outcome":"rate_limited"`, "a limited change is still audited")
 }
 
 func TestSchemasNameTheAllowedValues(t *testing.T) {
@@ -227,6 +255,9 @@ func TestSchemasNameTheAllowedValues(t *testing.T) {
 	assert.Contains(t, schemas["component_logs"], `"maximum":2000`)
 	assert.Contains(t, schemas["component_logs"], "node-drainer")
 	assert.Contains(t, schemas["inject_fault"], `"enum":[95]`)
+	assert.Contains(t, schemas["wait_for_stage"], `"default":180`)
+	assert.Contains(t, schemas["component_logs"], `"default":100`)
+	assert.Contains(t, schemas["node_events"], `"default":20`)
 }
 
 func TestBadArgumentsAreRefusedAndNeverReachTheCluster(t *testing.T) {

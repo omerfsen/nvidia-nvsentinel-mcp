@@ -7,12 +7,13 @@ LINT_IMAGE := golangci/golangci-lint:v2.15.0
 RESULTS := $(CURDIR)/docs/test-results
 VERSION := $(shell cat version.txt)
 
-.PHONY: help build lint test image lab-up lab-install lab-fixture lab-token lab-down e2e e2e-image
+.PHONY: help build lint test docs image lab-up lab-install lab-fixture lab-token lab-down e2e e2e-image
 
 help:
 	@echo "  make build        build $(BINARY)"
 	@echo "  make lint         gofmt, go vet and golangci-lint with upstream NVSentinel's config"
 	@echo "  make test         unit and MCP tests with client-go's fake client; no cluster"
+	@echo "  make docs         regenerate docs/tools.md and docs/tools.json from the server"
 	@echo "  make image        build the image locally"
 	@echo "  make lab-up       create the kind cluster"
 	@echo "  make lab-install  install NVSentinel through omerfsen.aicr (AICR_DIR=<checkout>)"
@@ -33,6 +34,9 @@ lint:
 
 test:
 	go test -race -count=1 ./pkg/...
+
+docs:
+	go test -count=1 ./pkg/server -run TestToolDocsMatchTheServer -update
 
 image:
 	docker build -t $(IMAGE) .

@@ -139,6 +139,52 @@ Run by hand, the released binary printed nothing and looked hung. It was waiting
 as a stdio server does. It now logs one line to stderr on start, and has `-h`, `-v` and `-d`. Stdout
 stays empty for the MCP protocol.
 
+## Step 10: Flags (2026-11-04)
+
+Run by hand, the binary printed nothing and looked hung. It now takes `-h`, `-v` and `-d`, and logs one
+line to stderr when it starts. stdout stays MCP's.
+
+**Result, v0.3.0:** the README's commands downloaded `linux/amd64`, and its checksum and provenance
+verified (`go-binaries.yml` at `refs/tags/v0.3.0`). It reports 0.3.0 and a bad flag exits 2. That binary
+passes all 7 e2e tests that apply on kind, including SIGTERM, after a host reboot with no lab rebuild. `-d`
+started, but was not run with a tool call, so its debug lines were not checked. Image:
+`sha256:08eec8f5a28eca9e0b564c7882fa90490cfdef0455e2f46a959c42ae7565bf0f`, 32 MB, user 65532, and its
+provenance verified. Only reported as the version: the image was not run through e2e.
+
+**Failure:** the release PR's `docker` run failed exporting its build cache with "token has no writable
+scopes". The App had merged the PR 2 minutes before that run started, with Actions slow that day. Closing
+the PR is the likely cause, not proved. It pushes nothing, and the tag's own build passed. **Fix:** a
+`DOCKER_CACHE` setting in cicd v0.10.0, set to `false` here, so a release holds nothing from an earlier run.
+
+## Step 11: Documenting the tools (2026-11-04)
+
+MCP has no standard for human-written docs. It has standard descriptions: `tools/list` for the tools, and
+`server.json` for the MCP Registry. Server Cards (SEP-2127) cover remote HTTP servers only and leave tools
+out on purpose, so they do not apply to a stdio server.
+
+So `docs/tools.json` is the `tools/list` response and `docs/tools.md` is rendered from it, both written by a
+test that talks to the server over a real MCP session. The same test fails if they go stale, so CI catches
+it. Tools gained the spec's optional `title`. `server.json` still said 0.1.0 and missed
+`NVSENTINEL_MCP_KUBECONFIG`; a test now checks its settings, but its version is still updated by hand.
+
+## Step 12: Checking against the standards (2026-11-04)
+
+The full comparison, with links to re-check it, is in [mcp-standards.md](mcp-standards.md). Spec 2026-07-28 removed
+`initialize` and made `server/discover` a MUST. The SDK handles it, so it was tested by sending raw JSON-RPC to the
+binary, which is now `TestItSpeaksTheLatestProtocol`. What that and reading the spec found:
+
+- **Rate limiting is a MUST** in the spec, and `security.md` listed it as left out on purpose. That was wrong. Tool
+  calls are now limited, and a limited change is still audited.
+- **The server advertised `logging`, which the spec deprecates,** and `listChanged`, though its tools never change.
+  Both were SDK defaults.
+- **A cancelled request still gets a reply.** The work stops at once (a 60 s wait ended when the cancel arrived), and
+  the SDK then sends the reply. The spec's cancellation page says SHOULD not and its stdio page says MUST NOT. Not
+  fixed: it is in the SDK, and clients are told to ignore such a reply.
+- Added `annotations.title` and `default` in the schemas, and `SECURITY.md`.
+
+**Dead end:** the official conformance suite needs a `--url`, so it cannot test a stdio server without adding an HTTP
+listener, which this server refuses to have.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, and checking the image's cosign signature and SBOM by hand.
