@@ -85,7 +85,8 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
 
 - One change at a time: a second is refused, not queued, so a reset cannot race another
   fault (`TestOnlyOneChangeRunsAtATime`). Waits are capped at 900 seconds, with at most 4
-  running (`TestWaitsAreLimited`).
+  running (`TestWaitsAreLimited`). Tool calls that pass schema validation are limited to 10 per second, with a burst of 20, as the
+  MCP spec requires (`TestToolCallsAreRateLimited`). Malformed calls are refused before that and never reach the cluster.
 - A failed query never counts as a stage reached (`TestAFailedQueryNeverCountsAsReached`).
   A healthy node reaches no fault stage (`TestAHealthyNodeReachesNoFaultStage`).
 - A scenario resets the lab if a step fails, panics, or its context ends because the client
@@ -141,7 +142,6 @@ cosign verify docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest> \
 - **Auth or TLS on the transport:** stdio has no listener. If this ever gets an HTTP
   transport, it needs real authentication first.
 - **An ingress:** nothing here listens.
-- **Rate limits:** there is one lab and one change at a time.
 - **Scanning logs for secrets:** patterns give false confidence. The server's identity cannot
   read Secrets, and logs are capped.
 - **Asking for human confirmation in the server:** an agent client may answer it itself. The

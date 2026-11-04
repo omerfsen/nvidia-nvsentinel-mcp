@@ -17,6 +17,22 @@ Real output from NVSentinel v1.30.0 on kind, through this server over MCP:
 [docs/test-results](docs/test-results/README.md). **These prove NVSentinel's pipeline
 against simulated DCGM, not real GPU health.**
 
+## Standards
+
+This server follows these standards. Each requirement, its status, the test that proves it and the one known
+gap are in [docs/mcp-standards.md](docs/mcp-standards.md), with links to check for newer versions.
+
+| Standard | Version |
+|---|---|
+| [Model Context Protocol](https://modelcontextprotocol.io/specification/latest) | 2026-07-28, and back to 2024-11-05 |
+| [MCP Registry `server.json`](https://github.com/modelcontextprotocol/registry/blob/main/docs/reference/server-json/generic-server-json.md) | 2025-12-11, valid and not yet published |
+| [AGENTS.md](https://agents.md) | [AGENTS.md](AGENTS.md), imported by `CLAUDE.md` |
+| [Agent Skills](https://agentskills.io/home) | [skills/nvsentinel-lab](skills/nvsentinel-lab/SKILL.md) |
+
+It has not been run through the official [conformance suite](https://github.com/modelcontextprotocol/conformance),
+which only tests HTTP servers. MCP has no standard for written docs, so
+[docs/tools.md](docs/tools.md) is generated from the server, the common practice.
+
 ## Tools
 
 | Tool | Changes the lab | What it does |
@@ -38,6 +54,10 @@ against simulated DCGM, not real GPU health.**
 
 Tools that change anything are off unless `NVSENTINEL_MCP_ALLOW_CHANGES=true`, and
 then work only on a kind cluster. Details: [docs/security.md](docs/security.md).
+
+Every tool's inputs, outputs and annotations: [docs/tools.md](docs/tools.md), generated from what
+the server returns for `tools/list`, as is the raw [docs/tools.json](docs/tools.json). A test fails
+if they no longer match the server; `make docs` regenerates them.
 
 ## Install
 

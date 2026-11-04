@@ -19,10 +19,12 @@
 package e2e
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +39,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const scenarioTimeout = 15 * time.Minute
+const (
+	scenarioTimeout = 15 * time.Minute
+	latestProtocol  = "2026-07-28"
+)
 
 func kubeconfig(t *testing.T) string {
 	t.Helper()
@@ -321,4 +326,162 @@ func waitFor(t *testing.T, session *mcp.ClientSession, stage string) {
 	encoded, err := json.Marshal(result.StructuredContent)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"reached":true`, stage)
+}
+
+// rawServer speaks JSON-RPC to the server directly, one line at a time, so a test sees exactly
+// what is on the wire rather than what the SDK's client makes of it.
+type rawServer struct {
+	stdin   io.WriteCloser
+	replies chan map[string]any
+	command *exec.Cmd
+}
+
+func startRaw(t *testing.T) *rawServer {
+	t.Helper()
+
+	command := serverCommand(t, kubeconfig(t), false)
+
+	stdin, err := command.StdinPipe()
+	require.NoError(t, err)
+
+	stdout, err := command.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, command.Start())
+
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
+
+	raw := &rawServer{stdin: stdin, replies: make(chan map[string]any, 32), command: command}
+
+	go func() {
+		defer close(raw.replies)
+
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 0, 1<<20), 1<<20)
+
+		for scanner.Scan() {
+			var reply map[string]any
+			if err := json.Unmarshal(scanner.Bytes(), &reply); err != nil {
+				reply = map[string]any{"notJSON": scanner.Text()}
+			}
+
+			raw.replies <- reply
+		}
+	}()
+
+	return raw
+}
+
+func (r *rawServer) send(t *testing.T, id int, method string, params map[string]any) {
+	t.Helper()
+
+	params["_meta"] = map[string]any{
+		"io.modelcontextprotocol/protocolVersion":    latestProtocol,
+		"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+	}
+
+	line, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+	require.NoError(t, err)
+
+	_, err = r.stdin.Write(append(line, '\n'))
+	require.NoError(t, err)
+}
+
+func (r *rawServer) reply(t *testing.T, id int) map[string]any {
+	t.Helper()
+
+	select {
+	case reply, open := <-r.replies:
+		require.True(t, open, "the server closed stdout")
+		require.Nil(t, reply["notJSON"], "stdout must hold only MCP messages")
+		require.InDelta(t, id, reply["id"], 0)
+
+		return reply
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, "no reply", "request %d", id)
+		return nil
+	}
+}
+
+func resultOf(t *testing.T, reply map[string]any) map[string]any {
+	t.Helper()
+
+	result, ok := reply["result"].(map[string]any)
+	require.True(t, ok, "reply: %v", reply)
+
+	return result
+}
+
+// Each check quotes a requirement of the 2026-07-28 revision: see docs/mcp-standards.md.
+func TestItSpeaksTheLatestProtocol(t *testing.T) {
+	raw := startRaw(t)
+
+	raw.send(t, 1, "server/discover", map[string]any{})
+	discover := resultOf(t, raw.reply(t, 1))
+	assert.Equal(t, "complete", discover["resultType"])
+	assert.Contains(t, discover["supportedVersions"], latestProtocol)
+	meta, ok := discover["_meta"].(map[string]any)
+	require.True(t, ok, "discover: %v", discover)
+	assert.NotNil(t, meta["io.modelcontextprotocol/serverInfo"])
+	assert.Equal(t, map[string]any{"tools": map[string]any{}}, discover["capabilities"])
+
+	raw.send(t, 2, "tools/list", map[string]any{})
+	first := resultOf(t, raw.reply(t, 2))
+	assert.Equal(t, "complete", first["resultType"])
+	assert.Contains(t, first, "ttlMs")
+	assert.Contains(t, first, "cacheScope")
+	assert.Len(t, first["tools"], 9)
+
+	raw.send(t, 3, "tools/list", map[string]any{})
+	assert.Equal(t, first["tools"], resultOf(t, raw.reply(t, 3))["tools"], "the order must be deterministic")
+
+	raw.send(t, 4, "tools/call", map[string]any{"name": "wait_for_stage", "arguments": map[string]any{"stage": "nope"}})
+	assert.Equal(t, true, resultOf(t, raw.reply(t, 4))["isError"], "bad input is a tool execution error")
+
+	raw.send(t, 5, "tools/call", map[string]any{"name": "does_not_exist", "arguments": map[string]any{}})
+	unknown, ok := raw.reply(t, 5)["error"].(map[string]any)
+	require.True(t, ok, "an unknown tool is a protocol error")
+	assert.InDelta(t, -32602, unknown["code"], 0)
+
+	raw.send(t, 6, "tools/call", map[string]any{"name": "list_scenarios", "arguments": map[string]any{}})
+	scenarios := resultOf(t, raw.reply(t, 6))
+	assert.NotNil(t, scenarios["structuredContent"])
+	assert.NotEmpty(t, scenarios["content"], "structured results also come as text")
+
+	require.NoError(t, raw.stdin.Close())
+
+	exited := make(chan error, 1)
+
+	go func() { exited <- raw.command.Wait() }()
+
+	select {
+	case <-exited:
+	case <-time.After(30 * time.Second):
+		assert.Fail(t, "the server must exit when stdin closes")
+	}
+}
+
+func TestCancellationStopsTheWork(t *testing.T) {
+	raw := startRaw(t)
+
+	// Never reached on a healthy lab, so only the cancellation can end it early.
+	raw.send(t, 1, "tools/call", map[string]any{
+		"name": "wait_for_stage", "arguments": map[string]any{"stage": "dcgm_unreachable", "timeoutSeconds": 120},
+	})
+
+	time.Sleep(time.Second)
+
+	// A wait that already ended would make the rest of this test pass with no cancellation.
+	select {
+	case reply := <-raw.replies:
+		require.FailNow(t, "the wait ended before the cancel", "reply: %v", reply)
+	default:
+	}
+
+	_, err := raw.stdin.Write([]byte(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}` + "\n"))
+	require.NoError(t, err)
+
+	cancelled := time.Now()
+	result := resultOf(t, raw.reply(t, 1))
+	assert.Less(t, time.Since(cancelled), 10*time.Second, "the wait must stop, not run to its timeout")
+	assert.Equal(t, true, result["isError"], "a cancelled wait did not reach its stage: %v", result)
 }
