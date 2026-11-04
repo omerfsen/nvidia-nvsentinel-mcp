@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nvidia-nvsentinel-mcp"
+description = "An MCP server for testing NVIDIA NVSentinel on a lab cluster"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = ["mcp==2.3.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0", "ruff==0.17.3"]
+
+[project.scripts]
+nvsentinel-mcp = "nvsentinel_mcp.server:main"
+nvsentinel-lab = "nvsentinel_mcp.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "nvsentinel_mcp.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["lab: needs the running kind lab (make e2e)"]
+
+[tool.ruff]
+line-length = 130
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S603", "S607"]
+"src/nvsentinel_mcp/lab.py" = ["S603"]

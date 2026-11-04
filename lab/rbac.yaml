@@ -1,0 +1,126 @@
+# The MCP server's identity on the lab: what its tools need and nothing else. It
+# cannot read Secrets, touch the nvsentinel namespace, or exec outside gpu-operator.
+# lab/mint-kubeconfig.sh makes a short-lived kubeconfig from this ServiceAccount.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvsentinel-mcp
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nvsentinel-mcp
+  namespace: nvsentinel-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nvsentinel-mcp-read
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nvsentinel-mcp-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nvsentinel-mcp-read
+subjects:
+  - kind: ServiceAccount
+    name: nvsentinel-mcp
+    namespace: nvsentinel-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvsentinel-mcp-read
+  namespace: nvsentinel
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, daemonsets]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvsentinel-mcp-read
+  namespace: nvsentinel
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvsentinel-mcp-read
+subjects:
+  - kind: ServiceAccount
+    name: nvsentinel-mcp
+    namespace: nvsentinel-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvsentinel-mcp-workload-read
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [gpu-workload]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvsentinel-mcp-workload-read
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvsentinel-mcp-workload-read
+subjects:
+  - kind: ServiceAccount
+    name: nvsentinel-mcp
+    namespace: nvsentinel-mcp
+---
+# The only writes: the simulated DCGM pod and its Service, in their namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvsentinel-mcp-fault
+  namespace: gpu-operator
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, delete]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [nvidia-dcgm]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvsentinel-mcp-fault
+  namespace: gpu-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvsentinel-mcp-fault
+subjects:
+  - kind: ServiceAccount
+    name: nvsentinel-mcp
+    namespace: nvsentinel-mcp

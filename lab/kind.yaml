@@ -1,0 +1,6 @@
+# The lab: one node for the system pods and the datastore, one standing in for a GPU node.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker

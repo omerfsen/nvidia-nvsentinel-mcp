@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""A kubectl with no cluster behind it. Its state is state.json next to the kubeconfig.
+
+It answers what lab.py asks and plays NVSentinel's part crudely: an injected
+fault cordons and drains at once, and a restarted hostengine undoes it. It tests
+this repo's sequencing and guards. It says nothing about NVSentinel.
+"""
+
+import json
+import os
+import sys
+
+NODE = "lab-worker"
+DEFAULTS = {
+    "context": "kind-nvsentinel-lab",
+    "provider": f"kind://docker/nvsentinel-lab/{NODE}",
+    "image": "ghcr.io/nvidia/nvsentinel-fake-dcgm:4.2.0@sha256:a0bf2a64410215f3661a0382cab22fb5e735eb903853d3dd3964471ba4830c94",
+    "init_image": None,
+    "user": {"token": "x"},
+    "fail_get": None,
+    "log_output": "a log line\n",
+    "event_message": "cordoned",
+    "fault": False,
+    "outage": False,
+    "pod_generation": 0,
+    "calls": [],
+    "env": {},
+}
+
+
+def conditions(s):
+    return [
+        {"type": "Ready", "status": "True"},
+        {"type": "GpuDcgmConnectivityFailure", "status": "True" if s["outage"] else "False"},
+        {"type": "GpuInforomWatch", "status": "False"},
+        {"type": "GpuMemWatch", "status": "True" if s["fault"] else "False"},
+    ]
+
+
+def node(s):
+    labels = {"nvidia.com/gpu.present": "true"}
+    if s["fault"]:
+        labels["dgxc.nvidia.com/nvsentinel-state"] = "drain-succeeded"
+    return {
+        "metadata": {"name": NODE, "labels": labels},
+        "spec": {"providerID": s["provider"], "unschedulable": s["fault"]},
+        "status": {"conditions": conditions(s)},
+    }
+
+
+def pod(name, node_name, image="x", init_image=None):
+    spec = {"nodeName": node_name, "containers": [{"image": image}]}
+    if init_image:
+        spec["initContainers"] = [{"image": init_image}]
+    return {
+        "metadata": {"name": name},
+        "spec": spec,
+        "status": {
+            "phase": "Running",
+            "conditions": [{"type": "Ready", "status": "True"}],
+            "containerStatuses": [{"ready": True, "restartCount": 0}],
+        },
+    }
+
+
+def get(s, args):
+    kind = args[0]
+    if s["fail_get"] == kind:
+        sys.stderr.write(f"the server could not list {kind}\n")
+        sys.exit(1)
+    namespace = args[args.index("-n") + 1] if "-n" in args else None
+    if kind == "nodes":
+        return {"items": [node(s)]}
+    if kind == "node":
+        return node(s)
+    if kind == "pods":
+        if namespace == "gpu-operator":
+            return {"items": [pod(f"nvidia-dcgm-{s['pod_generation']}", NODE, s["image"], s["init_image"])]}
+        if namespace == "default":
+            return {"items": [] if s["fault"] else [pod("gpu-workload-1", NODE)]}
+        return {"items": [pod("fault-quarantine-1", "lab-control-plane")]}
+    if kind == "deployment":
+        return {"status": {"readyReplicas": 0 if s["fault"] else 1}}
+    if kind == "events":
+        return {"items": [{"lastTimestamp": "2026-11-04T00:00:00Z", "reason": "Cordon", "message": s["event_message"]}]}
+    sys.stderr.write(f"unexpected get {args}\n")
+    sys.exit(1)
+
+
+def main():
+    argv = sys.argv[1:]
+    assert argv[0] == "--kubeconfig"
+    state_path = os.path.join(os.path.dirname(argv[1]), "state.json")
+    argv = argv[2:]
+    try:
+        with open(state_path) as handle:
+            s = {**DEFAULTS, **json.load(handle)}
+    except FileNotFoundError:
+        s = dict(DEFAULTS)
+    pinned = None
+    if argv[0] == "--context":
+        pinned, argv = argv[1], argv[2:]
+    s["calls"] = [*s["calls"], argv]
+    s["env"] = dict(os.environ)
+    if pinned is not None:
+        s["last_pinned"] = pinned
+    verb, rest = argv[0], argv[1:]
+    out = ""
+    if verb == "config" and rest[0] == "current-context":
+        out = s["context"] + "\n"
+    elif verb == "config":
+        out = json.dumps({"users": [{"name": "u", "user": s["user"]}]})
+    elif verb == "get":
+        out = json.dumps(get(s, rest))
+    elif verb == "exec":
+        s["fault"] = True
+        out = "Successfully injected\n"
+    elif verb == "delete":
+        s["fault"] = False
+        s["pod_generation"] += 1
+    elif verb == "patch":
+        s["outage"] = "nvidia-dcgm-outage" in rest[rest.index("-p") + 1]
+    elif verb == "logs":
+        out = s["log_output"]
+    with open(state_path, "w") as handle:
+        json.dump(s, handle)
+    sys.stdout.write(out)
+
+
+main()
