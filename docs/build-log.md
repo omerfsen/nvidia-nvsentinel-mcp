@@ -185,6 +185,24 @@ binary, which is now `TestItSpeaksTheLatestProtocol`. What that and reading the 
 **Dead end:** the official conformance suite needs a `--url`, so it cannot test a stdio server without adding an HTTP
 listener, which this server refuses to have.
 
+## Step 13: Release v0.4.0 (2026-11-04)
+
+From the published release, with the README's commands: all six binaries and the SBOM match `checksums.txt` and each file
+is the right format. `linux/amd64`'s provenance verified (`go-binaries.yml` at `refs/tags/v0.4.0`). It reports 0.4.0 and passes all 9 e2e tests
+that apply on kind, including SIGTERM and the raw protocol test. The other five binaries were not run.
+Image: `sha256:bd1bcd5e9629e635ae5b64c91b480634ace83c700aae111e523036845aa269b6`, 32 MB, user 65532, with the Registry label, and
+its provenance verified (`docker.yml` at `refs/tags/v0.4.0`). It passes all 9 e2e tests that apply. Results in
+[test-results](test-results/README.md) come from this binary.
+
+**Building without the cache:** the `Build` step took 63 s on main and 66 s on the tag, and the publish job 137 s and 157 s. With the
+cache, three runs took 115 to 120 s and 190 to 197 s. Two runs on a day when Actions speed varied do not prove it faster,
+but it is clearly no slower. The log has no `CACHED` line, so it did build from scratch.
+
+**An independent review** of the change found that `TestCancellationStopsTheWork` could pass with no cancellation, if the wait
+had already ended. It now fails if a reply came before the cancel, and checks the reply. It also found that the rate limit
+counts only calls that pass schema validation, so the docs now say that, and that two claims in
+[mcp-standards.md](mcp-standards.md) went beyond their tests, so tests were added for them.
+
 ## Not run yet
 
-A real GPU, AICR on NVKE, remediation, and checking the image's cosign signature and SBOM by hand.
+A real GPU, AICR on NVKE, remediation, MCP Inspector, the official conformance suite, and checking the image's cosign signature and SBOM by hand.

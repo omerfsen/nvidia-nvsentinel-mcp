@@ -1,7 +1,7 @@
 {
   "passed": true,
   "scenario": "dcgm_outage",
-  "seconds": 48.6,
+  "seconds": 51.6,
   "steps": [
     {
       "detail": "GpuDcgmConnectivityFailure=False",
@@ -34,7 +34,7 @@
     {
       "detail": "GpuDcgmConnectivityFailure=False",
       "ok": true,
-      "seconds": 33.1,
+      "seconds": 36.1,
       "step": "wait:dcgm_connected"
     },
     {
