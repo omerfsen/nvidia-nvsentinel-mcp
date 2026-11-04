@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.3.0...v0.4.0) (2026-11-04)
+
+
+### Features
+
+* follow MCP 2026-07-28 and document what we conform to ([#14](https://github.com/omerfsen/nvidia-nvsentinel-mcp/issues/14)) ([db75938](https://github.com/omerfsen/nvidia-nvsentinel-mcp/commit/db75938e6d5cfbb9ffecc705a0069f62fda542f6))
+
 ## [0.3.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.2.0...v0.3.0) (2026-11-04)
 
 
