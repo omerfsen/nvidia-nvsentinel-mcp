@@ -1,0 +1,103 @@
+{
+  "changesAllowed": false,
+  "context": "kind-nvsentinel-lab",
+  "dcgmPods": [
+    {
+      "name": "nvidia-dcgm-rqhkt",
+      "node": "nvsentinel-lab-worker",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 0
+    }
+  ],
+  "nodes": [
+    {
+      "checksReported": 0,
+      "cordoned": false,
+      "failingChecks": [],
+      "name": "nvsentinel-lab-control-plane",
+      "ready": true
+    },
+    {
+      "checksReported": 14,
+      "cordoned": false,
+      "failingChecks": [],
+      "name": "nvsentinel-lab-worker",
+      "ready": true
+    }
+  ],
+  "pods": [
+    {
+      "name": "fault-quarantine-7f5c7b6f9f-xmxsr",
+      "node": "nvsentinel-lab-control-plane",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 2
+    },
+    {
+      "name": "gpu-health-monitor-dcgm-4.x-8f4tl",
+      "node": "nvsentinel-lab-worker",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "name": "node-drainer-65965cf5-tmgzc",
+      "node": "nvsentinel-lab-control-plane",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 2
+    },
+    {
+      "name": "nvsentinel-external-mongodb-setup-2592000-1bdbf25b-bx8g7",
+      "node": "nvsentinel-lab-control-plane",
+      "phase": "Succeeded",
+      "ready": false,
+      "restarts": 0
+    },
+    {
+      "name": "nvsentinel-mongodb-rs0-0",
+      "node": "nvsentinel-lab-control-plane",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "name": "platform-connectors-48lv5",
+      "node": "nvsentinel-lab-control-plane",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 2
+    },
+    {
+      "name": "platform-connectors-bc46x",
+      "node": "nvsentinel-lab-worker",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 2
+    },
+    {
+      "name": "psmdb-operator-7998479784-58gzd",
+      "node": "nvsentinel-lab-control-plane",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 0
+    }
+  ],
+  "workload": [
+    {
+      "name": "gpu-workload-7c79b666dc-2v4pk",
+      "node": "nvsentinel-lab-worker",
+      "phase": "Running",
+      "ready": true,
+      "restarts": 0
+    },
+    {
+      "name": "gpu-workload-7c79b666dc-6stkh",
+      "node": "nvsentinel-lab-worker",
+      "phase": "Pending",
+      "ready": false,
+      "restarts": 0
+    }
+  ]
+}

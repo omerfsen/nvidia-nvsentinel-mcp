@@ -1,0 +1,72 @@
+# The simulated hostengine from NVSentinel's demos/local-fault-injection-demo,
+# pinned by digest. The server only injects faults into a pod running this image.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-dcgm
+  namespace: gpu-operator
+  labels:
+    app: nvidia-dcgm
+spec:
+  selector:
+    matchLabels:
+      app: nvidia-dcgm
+  template:
+    metadata:
+      labels:
+        app: nvidia-dcgm
+    spec:
+      containers:
+        - name: nvidia-dcgm-ctr
+          image: ghcr.io/nvidia/nvsentinel-fake-dcgm:4.2.0@sha256:a0bf2a64410215f3661a0382cab22fb5e735eb903853d3dd3964471ba4830c94
+          env:
+            - name: NVML_YAML_FILE
+              value: /etc/dcgm-fake/gpu-spec.yaml
+          volumeMounts:
+            - name: gpu-spec
+              mountPath: /etc/dcgm-fake
+              readOnly: true
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5555'"
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            timeoutSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+      volumes:
+        - name: gpu-spec
+          configMap:
+            name: nvidia-dcgm-gpu-spec
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nvidia-dcgm
+  namespace: gpu-operator
+  labels:
+    app: nvidia-dcgm
+spec:
+  type: ClusterIP
+  internalTrafficPolicy: Local
+  selector:
+    app: nvidia-dcgm
+  ports:
+    - name: dcgm
+      port: 5555
+      protocol: TCP
+      targetPort: 5555

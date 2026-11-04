@@ -1,0 +1,34 @@
+# Stands in for a training job, so the drain has something to evict.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-workload
+  namespace: default
+  labels:
+    app: gpu-workload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-workload
+  template:
+    metadata:
+      labels:
+        app: gpu-workload
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: workload
+          image: docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+          command: ["sh", "-c", "echo 'training job running'; sleep 1000000"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}

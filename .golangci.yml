@@ -1,0 +1,79 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: "2"
+run:
+  go: "1.27"
+  modules-download-mode: readonly
+  issues-exit-code: 1
+  tests: false
+  allow-parallel-runners: false
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: false
+      print-issued-lines: false
+    code-climate:
+      path: code-quality-report.json
+  path-prefix: ""
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - cyclop
+    - decorder
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - gocognit
+    - goconst
+    - gocritic
+    - gosec
+    - lll
+    - misspell
+    - nestif
+    - nilerr
+    - noctx
+    - whitespace
+    - wsl_v5
+    - gosec
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  uniq-by-line: false
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

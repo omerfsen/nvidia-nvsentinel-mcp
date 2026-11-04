@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "nvsentinel-lab": {
+      "command": "bin/nvsentinel-mcp",
+      "env": {
+        "NVSENTINEL_MCP_ALLOW_CHANGES": "true"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "passed": true,
+  "scenario": "dcgm_outage",
+  "seconds": 48.6,
+  "steps": [
+    {
+      "detail": "GpuDcgmConnectivityFailure=False",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:dcgm_connected"
+    },
+    {
+      "detail": "unschedulable=false",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:uncordoned"
+    },
+    {
+      "ok": true,
+      "seconds": 6.4,
+      "step": "outage_on"
+    },
+    {
+      "detail": "GpuDcgmConnectivityFailure=True",
+      "ok": true,
+      "seconds": 9,
+      "step": "wait:dcgm_unreachable"
+    },
+    {
+      "ok": true,
+      "seconds": 0,
+      "step": "outage_off"
+    },
+    {
+      "detail": "GpuDcgmConnectivityFailure=False",
+      "ok": true,
+      "seconds": 33.1,
+      "step": "wait:dcgm_connected"
+    },
+    {
+      "detail": "unschedulable=false",
+      "ok": true,
+      "seconds": 0,
+      "step": "wait:uncordoned"
+    }
+  ]
+}
