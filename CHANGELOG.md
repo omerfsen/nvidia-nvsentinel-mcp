@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.2.0...v0.3.0) (2026-11-04)
+
+
+### Features
+
+* add help, version and debug flags ([#11](https://github.com/omerfsen/nvidia-nvsentinel-mcp/issues/11)) ([2796281](https://github.com/omerfsen/nvidia-nvsentinel-mcp/commit/2796281ae0f8b76a2870bdc0054b3c34f383b445))
+
 ## [0.2.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.1.0...v0.2.0) (2026-11-04)
 
 
