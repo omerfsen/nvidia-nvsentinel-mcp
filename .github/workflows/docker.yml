@@ -1,0 +1,318 @@
+# Vendored from https://github.com/omerfsen/cicd (github/pipelines/docker/); edit it
+# there and re-run its install.sh. Settings for THIS repo live in
+# .github/cicd/config, which install.sh never overwrites.
+#
+# docker - builds one container image, scans it, and publishes it.
+#   - Pull request / manual run: trivy dependency scan of the build context,
+#     then build (loaded, never pushed) and a trivy scan of the image. Severities
+#     in DOCKER_SCAN_SEVERITY fail it.
+#   - Push to main or a vX.Y.Z tag: build, scan, and only when the scan passes,
+#     push to DOCKER_REGISTRY and sign keyless with cosign. Runs in the
+#     DOCKER_ENVIRONMENT environment. Tags: .github/cicd/docker/image.sh.
+# Logins: ghcr.io with GITHUB_TOKEN (packages: write), Azure Container Registry
+# with OIDC, both keyless. Docker Hub has no keyless login: it takes the variable
+# DOCKERHUB_USERNAME and the secret DOCKERHUB_TOKEN from the DOCKER_ENVIRONMENT
+# environment, so only the push job on main or a release tag can read them.
+#
+# Kill switch: DOCKER_ENABLED=false in .github/cicd/config.
+name: docker
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: docker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Reads this repo's settings from the BASE of a PR (or the pushed commit),
+  # never from the PR's own head, so a PR cannot switch off its own checks or
+  # change the settings it is checked with.
+  switch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      on: ${{ steps.s.outputs.on }}
+      runner: ${{ steps.s.outputs.runner }}
+      context: ${{ steps.s.outputs.context }}
+      file: ${{ steps.s.outputs.file }}
+      image: ${{ steps.s.outputs.image }}
+      registry: ${{ steps.s.outputs.registry }}
+      scan_severity: ${{ steps.s.outputs.scan_severity }}
+      scan_exit: ${{ steps.s.outputs.scan_exit }}
+      sign: ${{ steps.s.outputs.sign }}
+      attest: ${{ steps.s.outputs.attest }}
+      environment: ${{ steps.s.outputs.environment }}
+      azure_tenant_id: ${{ steps.s.outputs.azure_tenant_id }}
+      azure_subscription_id: ${{ steps.s.outputs.azure_subscription_id }}
+      azure_client_id: ${{ steps.s.outputs.azure_client_id }}
+    steps:
+      - id: s
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.base.sha || github.sha }}
+          # true for a PR from a fork: its code never runs on a self-hosted runner.
+          FORK: ${{ github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          gh api "repos/$REPO/contents/.github/cicd/config?ref=$REF" --jq .content 2>/dev/null | base64 -d > "$RUNNER_TEMP/config" || true
+          conf() { sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1 | tr -d '"'; }
+          if [ "$(conf DOCKER_ENABLED)" = "false" ]; then
+            echo "DOCKER_ENABLED is false in .github/cicd/config; nothing runs"; printf 'on=false\nrunner="ubuntu-24.04"\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Where the other jobs run: a runner label, or a JSON list of labels
+          # for a self-hosted runner. This job itself stays hosted, so a dead
+          # runner cannot stop it deciding. A fork PR always runs hosted.
+          runner() {  # runner <KEY>: the runs-on value, as JSON for fromJSON
+            local x j
+            x=$(sed -n "s/^$1=//p" "$RUNNER_TEMP/config" | tail -1)  # raw: a JSON list keeps its quotes
+            case "$x" in
+              "") j='"ubuntu-24.04"' ;;
+              \[*) j=$(jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string" and test("^[A-Za-z0-9._-]+$")))' <<<"$x" 2>/dev/null) || j= ;;
+              *) x=$(tr -d '"' <<<"$x"); if [[ $x =~ ^[A-Za-z0-9._-]+$ ]]; then j=$(jq -nc --arg l "$x" '$l'); else j=; fi ;;
+            esac
+            if [ -z "$j" ]; then echo "::error::$1 must be a runner label or a JSON list of labels, not '$x'" >&2; return 1; fi
+            if [ "$FORK" = true ] && [ "$j" != '"ubuntu-24.04"' ]; then
+              echo "::notice::A PR from a fork runs on ubuntu-24.04, whatever $1 says" >&2; j='"ubuntu-24.04"'
+            fi
+            echo "$j"
+          }
+          r=$(runner DOCKER_RUNNER) || { echo 'runner="ubuntu-24.04"' >> "$GITHUB_OUTPUT"; exit 1; }
+          echo "runner=$r" >> "$GITHUB_OUTPUT"
+          v() { local x; x=$(conf "$1"); echo "${x:-$2}"; }
+          bool() {  # bool <KEY> <default>: anything but true/false stops the run
+            local x; x=$(v "$1" "$2")
+            case "$x" in true|false) echo "$x" ;; *) echo "::error::$1 must be true or false, not '$x'" >&2; return 1 ;; esac
+          }
+          image=$(v DOCKER_IMAGE "${REPO#*/}"); image=${image,,}
+          registry=$(v DOCKER_REGISTRY "ghcr.io/${REPO%%/*}"); registry=${registry,,}
+          blocks=$(bool DOCKER_SCAN_BLOCKS true) || exit 1
+          sign=$(bool DOCKER_SIGN true) || exit 1
+          attest=$(bool DOCKER_ATTEST true) || exit 1
+          {
+            echo "on=true"
+            echo "context=$(v DOCKER_CONTEXT .)"
+            echo "file=$(v DOCKER_FILE Dockerfile)"
+            echo "image=$image"
+            echo "registry=$registry"
+            echo "scan_severity=$(v DOCKER_SCAN_SEVERITY CRITICAL,HIGH)"
+            echo "scan_exit=$([ "$blocks" = true ] && echo 1 || echo 0)"
+            echo "sign=$sign"
+            echo "attest=$attest"
+            echo "environment=$(v DOCKER_ENVIRONMENT registry)"
+            echo "azure_tenant_id=$(v DOCKER_AZURE_TENANT_ID '')"
+            echo "azure_subscription_id=$(v DOCKER_AZURE_SUBSCRIPTION_ID '')"
+            echo "azure_client_id=$(v DOCKER_AZURE_CLIENT_ID '')"
+          } >> "$GITHUB_OUTPUT"
+
+  # Build and scan, no credential: PRs (forks too) and manual runs.
+  build:
+    needs: switch
+    if: needs.switch.outputs.on == 'true' && github.event_name != 'push'
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CONTEXT: ${{ needs.switch.outputs.context }}
+      SEVERITY: ${{ needs.switch.outputs.scan_severity }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Reads lockfiles, so it reports a vulnerable dependency even when the
+      # image does not ship it.
+      - name: Dependency scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ needs.switch.outputs.context }}
+          scanners: vuln
+          severity: ${{ needs.switch.outputs.scan_severity }}
+          ignore-unfixed: true
+          exit-code: ${{ needs.switch.outputs.scan_exit }}
+          format: table
+          output: dependency-scan.txt
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ needs.switch.outputs.context }}
+          file: ${{ needs.switch.outputs.context }}/${{ needs.switch.outputs.file }}
+          load: true
+          push: false
+          tags: scan-target:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scan-target:${{ github.sha }}
+          severity: ${{ needs.switch.outputs.scan_severity }}
+          ignore-unfixed: true
+          exit-code: ${{ needs.switch.outputs.scan_exit }}
+          format: table
+          output: image-scan.txt
+      - name: Report
+        if: always()
+        run: |
+          for f in dependency-scan image-scan; do
+            echo "### $f ($SEVERITY)"
+            if [ -s "$f.txt" ]; then echo '```'; head -c 30000 "$f.txt"; echo '```'; else echo "Nothing at these severities."; fi
+          done >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: scans
+          path: "*-scan.txt"
+          retention-days: 30
+
+  # Main or a release tag only. Build, scan, and push only what passed: a scan
+  # after the push would leave an unscanned image pullable.
+  publish:
+    needs: switch
+    if: >-
+      needs.switch.outputs.on == 'true' && github.event_name == 'push'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    environment: ${{ needs.switch.outputs.environment }}
+    runs-on: ${{ fromJSON(needs.switch.outputs.runner) }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # ghcr.io push with GITHUB_TOKEN
+      id-token: write # Azure OIDC and cosign keyless signing
+      attestations: write # build provenance
+    env:
+      IMAGE: ${{ needs.switch.outputs.registry }}/${{ needs.switch.outputs.image }}
+      REGISTRY: ${{ needs.switch.outputs.registry }}
+      SIGN: ${{ needs.switch.outputs.sign }}
+      ATTEST: ${{ needs.switch.outputs.attest }}
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tags and login
+        id: meta
+        run: |
+          set -euo pipefail
+          mapfile -t tags < <(bash .github/cicd/docker/image.sh tags "$GITHUB_REF" "$GITHUB_SHA")
+          [ ${#tags[@]} -gt 0 ] || { echo "::error::$GITHUB_REF does not publish"; exit 1; }
+          read -r kind acr < <(bash .github/cicd/docker/image.sh login "$REGISTRY")
+          # Docker logs in to Hub under index.docker.io, and the provenance push looks
+          # up its credentials by that host.
+          subject=$IMAGE
+          [ "$kind" != dockerhub ] || subject=index.docker.io/${IMAGE#docker.io/}
+          { echo "tags=${tags[*]}"; echo "kind=$kind"; echo "acr=${acr:-}"; echo "subject=$subject"; } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ needs.switch.outputs.context }}
+          file: ${{ needs.switch.outputs.context }}/${{ needs.switch.outputs.file }}
+          load: true
+          push: false
+          tags: scan-target:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scan-target:${{ github.sha }}
+          severity: ${{ needs.switch.outputs.scan_severity }}
+          ignore-unfixed: true
+          exit-code: ${{ needs.switch.outputs.scan_exit }}
+          format: table
+          output: image-scan.txt
+      - name: Log in to ghcr.io
+        if: steps.meta.outputs.kind == 'ghcr'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Log in to Docker Hub
+        if: steps.meta.outputs.kind == 'dockerhub'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Shared with the other pipelines: .github/cicd/actions/azure-login.
+      - name: Log in to Azure and the registry
+        if: steps.meta.outputs.kind == 'acr'
+        uses: ./.github/cicd/actions/azure-login
+        with:
+          client-id: ${{ needs.switch.outputs.azure_client_id }}
+          tenant-id: ${{ needs.switch.outputs.azure_tenant_id }}
+          subscription-id: ${{ needs.switch.outputs.azure_subscription_id }}
+          acr: ${{ steps.meta.outputs.acr }}
+      - name: Push
+        id: push
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for t in $TAGS; do
+            docker tag "scan-target:$GITHUB_SHA" "$IMAGE:$t"
+            docker push "$IMAGE:$t"
+          done
+          # The digest is the one reference that cannot move; deploy by it.
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${TAGS%% *}" | cut -d@ -f2)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: needs.switch.outputs.sign == 'true' || needs.switch.outputs.attest == 'true'
+      # Keyless: the signature is bound to this workflow's OIDC identity and
+      # logged in the public Rekor transparency log.
+      - name: Sign
+        if: needs.switch.outputs.sign == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+      # What is in the image and how it was built, attached to the digest.
+      - name: SBOM
+        if: needs.switch.outputs.attest == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scan-target:${{ github.sha }}
+          format: cyclonedx
+          output: sbom.cdx.json
+          scanners: vuln
+      - name: Attest the SBOM
+        if: needs.switch.outputs.attest == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$IMAGE@$DIGEST"
+      - name: Attest the build provenance
+        if: needs.switch.outputs.attest == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.subject }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Summary
+        if: always()
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "### $IMAGE"
+            echo "- tags: \`${TAGS:-none}\`"
+            echo "- digest: \`${DIGEST:-not pushed}\`"
+            echo "- signed: \`$SIGN\`"
+            if [ -s image-scan.txt ]; then echo; echo '```'; head -c 30000 image-scan.txt; echo '```'; fi
+          } >> "$GITHUB_STEP_SUMMARY"

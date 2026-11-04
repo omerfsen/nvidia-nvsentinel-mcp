@@ -2,12 +2,12 @@
 # https://github.com/omerfsen/cicd. Plain KEY=value lines, read by the
 # workflows from main (so a PR cannot change them for itself).
 
-PIPELINES=release-please pr-title security
+PIPELINES=release-please pr-title security docker
 
-# release-please: off until the MCP server has passed on the lab; the release
-# App is created then. VERSION_FILES hold the version it bumps.
+# release-please: bumps VERSION_FILES and tags vX.Y.Z through the release App, and
+# the tag publishes the image.
 VERSION_FILES=version.txt
-RELEASE_PLEASE_ENABLED=false
+RELEASE_PLEASE_ENABLED=true
 RELEASE_PLEASE_RUNNER=ubuntu-24.04
 
 PR_TITLE_ENABLED=true
@@ -16,3 +16,16 @@ PR_TITLE_RUNNER=ubuntu-24.04
 # security: gitleaks, osv-scanner on go.mod, semgrep.
 SECURITY_ENABLED=true
 SECURITY_RUNNER=ubuntu-24.04
+
+# docker: scan on every PR; on main and vX.Y.Z tags push to Docker Hub only after the
+# scan passes, then sign and attest. DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are in the
+# registry environment, limited to main and v* tags.
+DOCKER_ENABLED=true
+DOCKER_RUNNER=ubuntu-24.04
+DOCKER_REGISTRY=docker.io/omerfsen
+DOCKER_IMAGE=nvidia-nvsentinel-mcp
+DOCKER_ENVIRONMENT=registry
+DOCKER_SCAN_SEVERITY=CRITICAL,HIGH
+DOCKER_SCAN_BLOCKS=true
+DOCKER_SIGN=true
+DOCKER_ATTEST=true

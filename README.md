@@ -130,7 +130,7 @@ Code in this directory and approve the server from `.mcp.json`. That one allows 
   needs metadata-collector, which needs NVML.
 - The syslog monitor: it reads kernel-transport journal entries, which a kind node
   cannot safely produce, so it is off on kind.
-- Pushing the image, signing it, or its attestations.
+- Pulling a published image, or checking its signature and attestations by hand.
 - `make test` in CI: cicd has no Go test pipeline yet.
 
 Every step, failure and dead end is in [docs/build-log.md](docs/build-log.md).

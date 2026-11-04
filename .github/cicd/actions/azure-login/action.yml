@@ -1,0 +1,69 @@
+# Vendored from https://github.com/omerfsen/cicd (github/actions/azure-login/); edit it
+# there and re-run its install.sh.
+#
+# azure-login - logs the job in to Azure with OIDC (no secret), and optionally
+# to an Azure Container Registry. Shared by the pipelines that push to Azure;
+# install.sh vendors it to .github/cicd/actions/azure-login/ whenever a
+# vendored pipeline uses it. Call it after actions/checkout, from a job with
+# `id-token: write`:
+#
+#   - uses: ./.github/cicd/actions/azure-login
+#     with:
+#       client-id: ${{ needs.switch.outputs.azure_client_id }}
+#       tenant-id: ${{ needs.switch.outputs.azure_tenant_id }}
+#       subscription-id: ${{ needs.switch.outputs.azure_subscription_id }}
+#       acr: myregistry          # optional
+#
+# The identity's federated credential decides what the job may do; the ids
+# here are not secrets.
+name: azure-login
+description: Log in to Azure with OIDC, and optionally to an Azure Container Registry.
+
+inputs:
+  client-id:
+    description: Client id of the user-assigned identity or app registration.
+    required: true
+  tenant-id:
+    description: Entra tenant id.
+    required: true
+  subscription-id:
+    description: Subscription id.
+    required: true
+  acr:
+    description: Registry name (the part before .azurecr.io) to log docker and helm in to; empty skips it.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # A missing id otherwise surfaces inside azure/login as a client-id error
+    # that reads like a broken action, not a config key left empty.
+    - name: Ids are set
+      shell: bash
+      env:
+        CLIENT_ID: ${{ inputs.client-id }}
+        TENANT_ID: ${{ inputs.tenant-id }}
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: |
+        missing=""
+        [ -n "$CLIENT_ID" ] || missing="$missing client-id"
+        [ -n "$TENANT_ID" ] || missing="$missing tenant-id"
+        [ -n "$SUBSCRIPTION_ID" ] || missing="$missing subscription-id"
+        if [ -n "$missing" ]; then
+          echo "::error title=Azure login::missing:$missing. Set the pipeline's *_AZURE_* keys in .github/cicd/config."
+          exit 1
+        fi
+    - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+    # az acr login writes a token docker and helm both read; no admin user and
+    # no password anywhere.
+    - name: Log in to the registry
+      if: inputs.acr != ''
+      shell: bash
+      env:
+        ACR: ${{ inputs.acr }}
+      run: az acr login --name "$ACR"
