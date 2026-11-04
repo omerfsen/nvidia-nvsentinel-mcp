@@ -78,10 +78,11 @@ A third review, of the Go code, found more:
   handlers itself on shutdown, a second signal ends the process, and the test now reads the audit line.
   It took 126 s before, as the whole scenario ran, and takes 66 s now.
 - **Exec could inject twice.** It fell back to SPDY after any error, including a failed command.
-  **Fix:** only after a failed upgrade, as kubectl does, with its output capped.
-- **That fallback had been hiding a permission gap.** With the fix, injection failed: websocket exec is
-  a `GET`, and needs `get` on `pods/exec`, not just `create`. The error was hidden too, by another fix
-  from the same review, so it had to be read from the server's log.
+  **First fix:** only after a failed upgrade, with output capped. Injection then failed, as websocket exec
+  is a `GET` and needs `get` on `pods/exec`, not just `create`. The error was hidden by another fix from
+  the same review, so it had to be read from the server's log. **Final fix:** websocket only, with no
+  fallback. Kubernetes 1.36 needs both `get` and `create` for it: a run with `get` alone was refused too.
+  Why the first fix did not fall back to SPDY was not established, as that code is gone.
 - Cluster text and client-go errors reached the caller unfenced, and unknown fields passed on tools
   with no arguments. Insecure kubeconfigs were accepted. RBAC had unused verbs.
 

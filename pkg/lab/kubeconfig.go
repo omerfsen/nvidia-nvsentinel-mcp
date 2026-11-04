@@ -82,7 +82,8 @@ func Open(config Config) (*Lab, error) {
 
 	client, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		return nil, failf("cannot create a Kubernetes client: %v", err)
+		slog.Warn("cannot create a Kubernetes client", "error", err)
+		return nil, failf("cannot create a Kubernetes client")
 	}
 
 	return New(client, &podExecer{client: client, config: restConfig}, raw.CurrentContext, config), nil

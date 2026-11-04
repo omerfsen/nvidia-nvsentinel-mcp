@@ -26,7 +26,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
-	"k8s.io/streaming/pkg/httpstream"
 )
 
 // Execer runs a fixed command in a pod.
@@ -39,27 +38,14 @@ type podExecer struct {
 	config *rest.Config
 }
 
-// Exec uses the websocket protocol and falls back to SPDY, as kubectl does.
+// Exec uses the websocket protocol only. With no second protocol to fall back to, an
+// error can never run the command twice.
 func (e *podExecer) Exec(ctx context.Context, namespace, pod string, command []string) (string, error) {
 	request := e.client.CoreV1().RESTClient().Post().
 		Resource("pods").Namespace(namespace).Name(pod).SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{Command: command, Stdout: true, Stderr: true}, scheme.ParameterCodec)
 
-	spdy, err := remotecommand.NewSPDYExecutor(e.config, http.MethodPost, request.URL())
-	if err != nil {
-		return "", fmt.Errorf("creating the SPDY executor: %w", err)
-	}
-
-	websocket, err := remotecommand.NewWebSocketExecutor(e.config, http.MethodGet, request.URL().String())
-	if err != nil {
-		return "", fmt.Errorf("creating the websocket executor: %w", err)
-	}
-
-	// Only when the websocket upgrade itself failed, as kubectl does. Any other error may
-	// come from the command, and falling back would run it twice.
-	executor, err := remotecommand.NewFallbackExecutor(websocket, spdy, func(err error) bool {
-		return httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
-	})
+	executor, err := remotecommand.NewWebSocketExecutor(e.config, http.MethodGet, request.URL().String())
 	if err != nil {
 		return "", fmt.Errorf("creating the executor: %w", err)
 	}
