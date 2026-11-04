@@ -62,7 +62,7 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
   sends hostile values through a real MCP session, asserts the schema refused them, and
   asserts the cluster saw no call.
 - The injected command is fixed. Only the XID varies, from an allowlist of tested values. It
-  runs once: exec falls back from websocket to SPDY only when the upgrade itself failed.
+  runs once: exec uses websocket only, so no error can fall back to a second protocol and run it again.
 - There is no shell and no `kubectl`: the server calls the API with `client-go`.
 
 ### Hostile output

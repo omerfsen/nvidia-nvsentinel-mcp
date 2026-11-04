@@ -370,7 +370,7 @@ func TestShutdownCancelsARunningChange(t *testing.T) {
 
 	// The gate never opens: only the cancelled context can end this change.
 	require.NoError(t, h.server.Wait(t.Context()))
-	assert.Contains(t, h.audit.String(), `"outcome":"refused"`)
+	assert.Contains(t, h.audit.String(), `"outcome":"cancelled"`)
 }
 
 func TestShutdownWaitsForARunningChange(t *testing.T) {

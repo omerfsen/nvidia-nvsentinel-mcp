@@ -105,7 +105,8 @@ rules:
     verbs: [list, delete]
   - apiGroups: [""]
     resources: [pods/exec]
-    # create for SPDY, get for the websocket protocol, which is a GET.
+    # Websocket exec needs both on Kubernetes 1.36: the request is a GET, and the API server
+    # also checks create. A run with either one alone was refused.
     verbs: [create, get]
   - apiGroups: [""]
     resources: [services]

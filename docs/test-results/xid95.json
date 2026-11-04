@@ -1,12 +1,12 @@
 {
   "passed": true,
   "scenario": "xid95",
-  "seconds": 123.3,
+  "seconds": 135.3,
   "steps": [
     {
       "detail": "GpuDcgmConnectivityFailure=False",
       "ok": true,
-      "seconds": 0,
+      "seconds": 9,
       "step": "wait:dcgm_connected"
     },
     {
@@ -24,11 +24,11 @@
     {
       "detail": "readyReplicas=1, on the GPU node: true",
       "ok": true,
-      "seconds": 0,
+      "seconds": 3,
       "step": "wait:workload_running"
     },
     {
-      "detail": "pod nvidia-dcgm-7rg4k",
+      "detail": "pod nvidia-dcgm-9bzfx",
       "ok": true,
       "seconds": 0,
       "step": "inject_xid95"
@@ -58,7 +58,7 @@
       "step": "wait:drain_succeeded"
     },
     {
-      "detail": "deleted nvidia-dcgm-7rg4k",
+      "detail": "deleted nvidia-dcgm-9bzfx",
       "ok": true,
       "seconds": 6.1,
       "step": "clear_fault"

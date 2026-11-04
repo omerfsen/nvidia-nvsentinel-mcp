@@ -457,12 +457,12 @@ func changeOutcome(ctx context.Context, out any, err error) string {
 	var userError *lab.UserError
 
 	switch {
+	case ctx.Err() != nil:
+		return "cancelled"
 	case errors.As(err, &userError):
 		return "refused"
 	case err != nil:
 		return "crashed"
-	case ctx.Err() != nil:
-		return "cancelled"
 	}
 
 	if report, ok := out.(*lab.Report); ok && !report.Passed {
