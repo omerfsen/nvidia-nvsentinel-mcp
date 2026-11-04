@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.1.0...v0.2.0) (2026-11-04)
+
+
+### Features
+
+* release binaries for Linux, macOS and Windows ([#8](https://github.com/omerfsen/nvidia-nvsentinel-mcp/issues/8)) ([03dfd9f](https://github.com/omerfsen/nvidia-nvsentinel-mcp/commit/03dfd9f379d3a1ef486bd45c5a8bc5a58009e337))
+
 ## 0.1.0 (2026-11-04)
 
 
