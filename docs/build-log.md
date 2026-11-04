@@ -116,6 +116,17 @@ release-please on, the App opened and merged its release PR, tagged v0.1.0, and 
 image on kind, and Trivy is clean. `gh attestation verify` confirms it was built by `docker.yml` at
 `refs/tags/v0.1.0`. Three Sigstore bundles are attached to it (signature, SBOM, provenance).
 
+## Step 9: Binaries (2026-11-04)
+
+Linux, macOS and Windows, each on amd64 and arm64, from a new cicd pipeline, `go-binaries`, using
+`actions/setup-go` v7.0.0 and following GitHub's Go guide. It also runs `go vet` and `go test -race` on every
+PR, which closes a gap, and uploads the binaries as a workflow artifact. On a tag they go on the release.
+
+**Failure avoided:** the kubeconfig check reads Unix modes, and Go reports every file as open to all on
+Windows, so every kubeconfig would have been refused there. The check now skips Windows, and the docs say so.
+
+Stable file names, with no version, keep `/releases/latest/download/...` working.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, and checking the image's cosign signature and SBOM by hand.

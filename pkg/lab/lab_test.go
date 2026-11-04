@@ -457,6 +457,13 @@ func TestOpenRefusesABadKubeconfig(t *testing.T) {
 	}
 }
 
+func TestTheModeCheckAppliesOutsideWindows(t *testing.T) {
+	assert.True(t, privateEnough(0o600, "linux"))
+	assert.False(t, privateEnough(0o644, "linux"))
+	assert.False(t, privateEnough(0o640, "darwin"))
+	assert.True(t, privateEnough(0o666, "windows"))
+}
+
 func TestOpenRefusesAnUnsafeCluster(t *testing.T) {
 	for name, cluster := range map[string]string{
 		"no TLS verification": `{server: "https://127.0.0.1:1", insecure-skip-tls-verify: true}`,

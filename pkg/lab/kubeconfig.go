@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 
 	"k8s.io/client-go/kubernetes"
@@ -89,6 +90,12 @@ func Open(config Config) (*Lab, error) {
 	return New(client, &podExecer{client: client, config: restConfig}, raw.CurrentContext, config), nil
 }
 
+// privateEnough checks a file's mode. Windows has no such modes: Go reports every file as
+// open to all, and access is in ACLs this does not read, so the check cannot apply there.
+func privateEnough(mode os.FileMode, goos string) bool {
+	return goos == "windows" || mode.Perm()&0o077 == 0
+}
+
 func restConfigFor(raw *clientcmdapi.Config) (*rest.Config, error) {
 	config, err := clientcmd.NewNonInteractiveClientConfig(
 		*raw, raw.CurrentContext, &clientcmd.ConfigOverrides{}, nil,
@@ -115,7 +122,7 @@ func loadKubeconfig(path string) (*clientcmdapi.Config, error) {
 		return nil, failf("the configured kubeconfig is not a regular file")
 	}
 
-	if info.Mode().Perm()&0o077 != 0 {
+	if !privateEnough(info.Mode(), runtime.GOOS) {
 		return nil, failf("refusing: the kubeconfig is readable by others; chmod 600 it")
 	}
 

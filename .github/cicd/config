@@ -2,7 +2,7 @@
 # https://github.com/omerfsen/cicd. Plain KEY=value lines, read by the
 # workflows from main (so a PR cannot change them for itself).
 
-PIPELINES=release-please pr-title security docker
+PIPELINES=release-please pr-title security docker go-binaries
 
 # release-please: bumps VERSION_FILES and tags vX.Y.Z through the release App, and
 # the tag publishes the image.
@@ -29,3 +29,11 @@ DOCKER_SCAN_SEVERITY=CRITICAL,HIGH
 DOCKER_SCAN_BLOCKS=true
 DOCKER_SIGN=true
 DOCKER_ATTEST=true
+
+# go-binaries: go vet, go test -race and a build of every target on each PR, with the binaries
+# as a workflow artifact. A vX.Y.Z tag attaches them to its release, in the "binaries"
+# environment, limited to v* tags.
+GO_BINARIES_ENABLED=true
+GO_BINARIES_RUNNER=ubuntu-24.04
+GO_BINARIES_TARGETS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+GO_BINARIES_ENVIRONMENT=binaries

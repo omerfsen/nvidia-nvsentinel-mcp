@@ -34,7 +34,7 @@ There is no network attacker: the server speaks stdio and opens no port.
 | A fault goes only into a pod whose every container, init and ephemeral included, comes from the simulated image's exact repository | `TestFaultsAreRefusedOnAnyOtherImage` |
 | One kubeconfig, set by the operator. `KUBECONFIG` and `~/.kube/config` are never read, and no tool argument can choose a file | `TestOpenUsesOnlyTheConfiguredFile` |
 | The kubeconfig is read once per call and held in memory for that call. Editing it takes effect on the next call, so it must stay private | `TestAChangedCurrentContextCannotRedirectAnOpenLab` |
-| A kubeconfig others can read is refused | `TestOpenRefusesABadKubeconfig` |
+| A kubeconfig others can read is refused. **Not on Windows**, which has no such modes: keep it where only you can read it | `TestOpenRefusesABadKubeconfig`, `TestTheModeCheckAppliesOutsideWindows` |
 | A kubeconfig with an `exec` or `auth-provider` plugin is refused before any API call, as it would run a command | `TestOpenRefusesABadKubeconfig` |
 | So is one that points at credential files, whose modes are unchecked, or that impersonates another user | `TestOpenRefusesABadKubeconfig` |
 | So is one that turns off TLS verification or does not use https, as the token could reach another server | `TestOpenRefusesAnUnsafeCluster` |
@@ -125,7 +125,8 @@ and can reach the host's gateway. It still beats `--network=host`, so do not use
 that one file, never `~/.kube`. Add `--env NVSENTINEL_MCP_ALLOW_CHANGES=true` only for a run that should
 change the lab. The e2e tests ran the image with exactly these flags.
 
-Verify what you pull, with the digest of the release you use:
+A release's binaries come from the same tag, with their own provenance, `checksums.txt` and SBOM as
+release assets. Verify what you pull, with the digest of the release you use:
 
 ```shell
 gh attestation verify oci://docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest> \
@@ -151,6 +152,8 @@ cosign verify docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest> \
 - Tool annotations are hints: only a client that honours them prompts a human.
 - Fencing lowers the risk from prompt injection but does not remove it.
 - The image is amd64 only.
-- `make test` and `make lint` do not run in CI yet; cicd has no Go test pipeline.
+- The binaries for anything but Linux on x86-64 are built and not run. They are not code-signed
+  or notarized: check them with `checksums.txt` and `gh attestation verify`.
+- `make lint` and the e2e tests do not run in CI. `go vet` and `go test -race` do.
 - Allowing a tag as well as a digest for the simulated image is deliberate, so the server
   works on NVSentinel's own demo. It checks which image this is, not its exact bytes.
