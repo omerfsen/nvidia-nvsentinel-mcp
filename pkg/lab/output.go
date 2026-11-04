@@ -15,11 +15,16 @@
 package lab
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // Limits on what goes back to the caller.
@@ -39,6 +44,27 @@ func (e *UserError) Error() string { return e.message }
 
 func failf(format string, args ...any) error {
 	return &UserError{message: Clean(fmt.Sprintf(format, args...), maxErrorChars)}
+}
+
+// apiFailure reports a failed cluster call by its kind only. client-go's text holds the
+// API server's address and the caller's identity, so the detail goes to the log.
+func apiFailure(action string, err error) error {
+	slog.Warn("a cluster call failed", "action", action, "error", err)
+
+	reason := "the API server did not answer"
+
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		reason = "stopped"
+	case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
+		reason = "not permitted"
+	case apierrors.IsNotFound(err):
+		reason = "not found"
+	case apierrors.IsConflict(err):
+		reason = "conflict"
+	}
+
+	return failf("%s failed: %s", action, reason)
 }
 
 // Clean removes control characters and terminal escapes, keeping tab and newline, and

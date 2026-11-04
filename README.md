@@ -52,8 +52,9 @@ can start it. All the commands below leave changes off; add
 go install github.com/omerfsen/nvidia-nvsentinel-mcp@latest
 ```
 
-The binary is `nvidia-nvsentinel-mcp`, in `$(go env GOPATH)/bin`. Or use the image, once it is
-published to Docker Hub.
+The binary is `nvidia-nvsentinel-mcp`, in `$(go env GOPATH)/bin`. Until the first release is
+tagged, use `@main` instead of `@latest`. Or use the image, once it is published to Docker Hub. The
+image never runs as root.
 
 **2. Add it to your client.** For Claude Code:
 

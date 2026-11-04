@@ -3,7 +3,7 @@
   "context": "kind-nvsentinel-lab",
   "dcgmPods": [
     {
-      "name": "nvidia-dcgm-rqhkt",
+      "name": "nvidia-dcgm-dk4cg",
       "node": "nvsentinel-lab-worker",
       "phase": "Running",
       "ready": true,
@@ -86,14 +86,14 @@
   ],
   "workload": [
     {
-      "name": "gpu-workload-7c79b666dc-2v4pk",
+      "name": "gpu-workload-7c79b666dc-p7zz2",
       "node": "nvsentinel-lab-worker",
       "phase": "Running",
       "ready": true,
       "restarts": 0
     },
     {
-      "name": "gpu-workload-7c79b666dc-6stkh",
+      "name": "gpu-workload-7c79b666dc-qd9hx",
       "node": "nvsentinel-lab-worker",
       "phase": "Pending",
       "ready": false,

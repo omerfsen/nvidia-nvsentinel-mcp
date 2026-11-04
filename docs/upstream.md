@@ -17,8 +17,8 @@ proposed to NVIDIA, and they may want it in another shape, or not at all.
 | Go 1.27.3, one module per component, `main.go` and `pkg/` | Same layout |
 | `client-go` v0.37.2 and `stretchr/testify` | Same versions |
 | `.golangci.yml` | A copy of theirs from v1.30.0; `make lint` is clean, tests are not linted |
-| Wrap errors with `%w`, `context.Context` on every I/O path | Yes |
-| A test proves remediation does not fire when healthy | `TestAHealthyNodeReachesNoFaultStage` |
+| Wrap errors with `%w`, `context.Context` on every I/O path | Yes, except that errors shown to the caller drop their detail on purpose, and log it |
+| A test proves remediation does not fire when healthy | There is no remediation code here. `TestAHealthyNodeReachesNoFaultStage` covers the server's own checks |
 | Conventional Commit PR title | Yes |
 | No AI attribution trailers | Yes |
 | Secrets read at run time | Yes |

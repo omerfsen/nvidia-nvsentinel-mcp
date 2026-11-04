@@ -158,7 +158,7 @@ func cordonIs(want bool) stageCheck {
 func (l *Lab) workloadNodes(ctx context.Context) ([]string, error) {
 	pods, err := l.client.CoreV1().Pods(workloadNamespace).List(ctx, metav1.ListOptions{LabelSelector: workloadSelector})
 	if err != nil {
-		return nil, failf("listing workload pods: %v", err)
+		return nil, apiFailure("listing workload pods", err)
 	}
 
 	nodes := []string{}
@@ -216,7 +216,7 @@ func workloadRunning(ctx context.Context, l *Lab) (bool, string, error) {
 
 	deployment, err := l.client.AppsV1().Deployments(workloadNamespace).Get(ctx, workloadName, metav1.GetOptions{})
 	if err != nil {
-		return false, "", failf("reading the workload: %v", err)
+		return false, "", apiFailure("reading the workload", err)
 	}
 
 	nodes, err := l.workloadNodes(ctx)

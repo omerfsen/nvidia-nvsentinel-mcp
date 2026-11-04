@@ -60,8 +60,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// After the first signal the default action is back, so a second one ends the process.
+	context.AfterFunc(ctx, stop)
+
 	config := lab.ConfigFromEnv()
-	mcpServer := server.New(buildVersion(), func() (*lab.Lab, error) { return lab.Open(config) }, logger)
+	mcpServer := server.New(ctx, buildVersion(), func() (*lab.Lab, error) { return lab.Open(config) }, logger)
 
 	err := mcpServer.MCP().Run(ctx, &mcp.StdioTransport{})
 

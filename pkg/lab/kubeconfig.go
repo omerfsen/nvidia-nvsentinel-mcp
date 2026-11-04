@@ -16,6 +16,7 @@ package lab
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -92,7 +93,8 @@ func restConfigFor(raw *clientcmdapi.Config) (*rest.Config, error) {
 		*raw, raw.CurrentContext, &clientcmd.ConfigOverrides{}, nil,
 	).ClientConfig()
 	if err != nil {
-		return nil, failf("the kubeconfig cannot be used: %v", err)
+		slog.Warn("the kubeconfig cannot be used", "error", err)
+		return nil, failf("the kubeconfig cannot be used")
 	}
 
 	withoutEnvironmentProxy(config, raw)
@@ -126,11 +128,51 @@ func loadKubeconfig(path string) (*clientcmdapi.Config, error) {
 		return nil, failf("the kubeconfig has no current context")
 	}
 
-	if user, ok := raw.AuthInfos[current.AuthInfo]; ok && (user.Exec != nil || user.AuthProvider != nil) {
-		return nil, failf("refusing: the kubeconfig runs a credential plugin; it can only use a token or certificate")
+	if err := checkUser(raw.AuthInfos[current.AuthInfo]); err != nil {
+		return nil, err
+	}
+
+	if err := checkCluster(raw.Clusters[current.Cluster]); err != nil {
+		return nil, err
 	}
 
 	return raw, nil
+}
+
+// checkUser allows only credentials held in the file itself. A plugin would run a command,
+// a path would read a file with no check on its mode, and impersonation would change who acts.
+func checkUser(user *clientcmdapi.AuthInfo) error {
+	if user == nil {
+		return failf("the kubeconfig's current context has no user")
+	}
+
+	switch {
+	case user.Exec != nil || user.AuthProvider != nil:
+		return failf("refusing: the kubeconfig runs a credential plugin; it can only use a token or certificate")
+	case user.TokenFile != "" || user.ClientCertificate != "" || user.ClientKey != "":
+		return failf("refusing: the kubeconfig points at credential files; they must be inside it")
+	case user.Impersonate != "" || len(user.ImpersonateGroups) > 0 || user.ImpersonateUID != "":
+		return failf("refusing: the kubeconfig impersonates another user")
+	}
+
+	return nil
+}
+
+// checkCluster requires TLS that verifies the server, so the token cannot go to another one.
+func checkCluster(cluster *clientcmdapi.Cluster) error {
+	if cluster == nil {
+		return failf("the kubeconfig's current context has no cluster")
+	}
+
+	if cluster.InsecureSkipTLSVerify {
+		return failf("refusing: the kubeconfig turns off TLS verification")
+	}
+
+	if !strings.HasPrefix(cluster.Server, "https://") {
+		return failf("refusing: the kubeconfig's server is not https")
+	}
+
+	return nil
 }
 
 // withoutEnvironmentProxy stops HTTP(S)_PROXY from sending credentials elsewhere. A

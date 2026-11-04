@@ -124,7 +124,15 @@ func start(t *testing.T, config lab.Config, contextName string, execer lab.Exece
 func connect(t *testing.T, open OpenLab, client *fake.Clientset, audit *bytes.Buffer) *harness {
 	t.Helper()
 
-	server := New("test", open, slog.New(slog.NewJSONHandler(audit, nil)))
+	return connectWith(t, t.Context(), open, client, audit)
+}
+
+func connectWith(
+	t *testing.T, shutdown context.Context, open OpenLab, client *fake.Clientset, audit *bytes.Buffer,
+) *harness {
+	t.Helper()
+
+	server := New(shutdown, "test", open, slog.New(slog.NewJSONHandler(audit, nil)))
 	serverSide, clientSide := mcp.NewInMemoryTransports()
 
 	serverSession, err := server.MCP().Connect(t.Context(), serverSide, nil)
@@ -226,15 +234,17 @@ func TestBadArgumentsAreRefusedAndNeverReachTheCluster(t *testing.T) {
 		tool      string
 		arguments map[string]any
 	}{
-		"unknown scenario": {"run_test_scenario", map[string]any{"name": "nope"}},
-		"unlisted xid":     {"inject_fault", map[string]any{"xid": 13}},
-		"xid as a string":  {"inject_fault", map[string]any{"xid": "95; rm -rf /"}},
-		"huge timeout":     {"wait_for_stage", map[string]any{"stage": "cordoned", "timeoutSeconds": 1_000_000_000}},
-		"flag as a stage":  {"wait_for_stage", map[string]any{"stage": "--help"}},
-		"flag as a source": {"component_logs", map[string]any{"component": "--help"}},
-		"huge tail":        {"component_logs", map[string]any{"component": "node-drainer", "tail": 1_000_000_000}},
-		"huge limit":       {"node_events", map[string]any{"limit": 1_000_000_000}},
-		"an extra field":   {"inject_fault", map[string]any{"xid": 95, "kubeconfig": "/etc/passwd"}},
+		"unknown scenario":     {"run_test_scenario", map[string]any{"name": "nope"}},
+		"unlisted xid":         {"inject_fault", map[string]any{"xid": 13}},
+		"xid as a string":      {"inject_fault", map[string]any{"xid": "95; rm -rf /"}},
+		"huge timeout":         {"wait_for_stage", map[string]any{"stage": "cordoned", "timeoutSeconds": 1_000_000_000}},
+		"flag as a stage":      {"wait_for_stage", map[string]any{"stage": "--help"}},
+		"flag as a source":     {"component_logs", map[string]any{"component": "--help"}},
+		"huge tail":            {"component_logs", map[string]any{"component": "node-drainer", "tail": 1_000_000_000}},
+		"huge limit":           {"node_events", map[string]any{"limit": 1_000_000_000}},
+		"an extra field":       {"inject_fault", map[string]any{"xid": 95, "kubeconfig": "/etc/passwd"}},
+		"an extra on none":     {"lab_status", map[string]any{"kubeconfig": "/etc/passwd"}},
+		"an extra on a change": {"reset_lab", map[string]any{"kubeconfig": "/etc/passwd"}},
 	}
 
 	for name, test := range cases {
@@ -242,6 +252,7 @@ func TestBadArgumentsAreRefusedAndNeverReachTheCluster(t *testing.T) {
 			h := start(t, labConfig(), labContext, passExec{})
 			result := h.call(t, test.tool, test.arguments)
 			assert.True(t, result.IsError, "%+v", result)
+			assert.Contains(t, text(result), "validating", "refused by the schema, before any code ran")
 			assert.Empty(t, h.client.Actions())
 		})
 	}
@@ -337,6 +348,29 @@ func TestReadingIsNotAudited(t *testing.T) {
 	h := start(t, labConfig(), labContext, passExec{})
 	h.call(t, "lab_status", nil)
 	assert.Empty(t, h.audit.String())
+}
+
+// The SDK does not cancel handlers on shutdown over stdio, so the server must.
+func TestShutdownCancelsARunningChange(t *testing.T) {
+	blocker := newGate()
+	stop, cancel := context.WithCancel(t.Context())
+	audit := &bytes.Buffer{}
+	client := healthyCluster()
+	open := func() (*lab.Lab, error) { return lab.New(client, blocker, labContext, labConfig()), nil }
+	h := connectWith(t, stop, open, client, audit)
+
+	go func() {
+		_, _ = h.session.CallTool(t.Context(), &mcp.CallToolParams{
+			Name: "inject_fault", Arguments: map[string]any{"xid": 95},
+		})
+	}()
+
+	<-blocker.entered
+	cancel()
+
+	// The gate never opens: only the cancelled context can end this change.
+	require.NoError(t, h.server.Wait(t.Context()))
+	assert.Contains(t, h.audit.String(), `"outcome":"refused"`)
 }
 
 func TestShutdownWaitsForARunningChange(t *testing.T) {

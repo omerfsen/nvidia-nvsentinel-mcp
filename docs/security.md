@@ -33,9 +33,11 @@ There is no network attacker: the server speaks stdio and opens no port.
 | Changes need every node's provider ID to start with `kind://` | `TestChangesAreRefusedOnANodeThatIsNotKind` |
 | A fault goes only into a pod whose every container, init and ephemeral included, comes from the simulated image's exact repository | `TestFaultsAreRefusedOnAnyOtherImage` |
 | One kubeconfig, set by the operator. `KUBECONFIG` and `~/.kube/config` are never read, and no tool argument can choose a file | `TestOpenUsesOnlyTheConfiguredFile` |
-| The context is resolved once per call, in memory. Changing the current context afterwards changes nothing. Editing a cluster's address under the same name takes effect on the next call, so the kubeconfig must stay private | `TestEditingTheFileCannotRedirectAnOpenLab` |
+| The kubeconfig is read once per call and held in memory for that call. Editing it takes effect on the next call, so it must stay private | `TestAChangedCurrentContextCannotRedirectAnOpenLab` |
 | A kubeconfig others can read is refused | `TestOpenRefusesABadKubeconfig` |
 | A kubeconfig with an `exec` or `auth-provider` plugin is refused before any API call, as it would run a command | `TestOpenRefusesABadKubeconfig` |
+| So is one that points at credential files, whose modes are unchecked, or that impersonates another user | `TestOpenRefusesABadKubeconfig` |
+| So is one that turns off TLS verification or does not use https, as the token could reach another server | `TestOpenRefusesAnUnsafeCluster` |
 | `HTTP(S)_PROXY` is ignored, so credentials cannot be sent to a proxy set in the environment | `TestTheEnvironmentProxyIsIgnored` |
 
 Reading is not limited to the lab, on purpose: later runs read a real NVKE cluster.
@@ -43,9 +45,9 @@ There the limit must come from the API server: use a token with read-only RBAC.
 
 ### Least privilege in the cluster
 
-`lab/rbac.yaml` gives the server its own ServiceAccount. It can read nodes, events and
-the pods it reports on; delete pods and exec only in `gpu-operator`; and patch only the
-`nvidia-dcgm` Service. It cannot read Secrets. `lab/mint-kubeconfig.sh` makes a
+`lab/rbac.yaml` gives the server its own ServiceAccount, with only the verbs its calls use.
+It can list nodes, events and the pods it reports on; read logs in `nvsentinel`; delete pods
+and exec only in `gpu-operator`; and patch only the `nvidia-dcgm` Service. It cannot read Secrets. `lab/mint-kubeconfig.sh` makes a
 kubeconfig with an 8-hour token and no admin certificate, keeps the token out of argv,
 and checks the result: no certificate, the expected identity, no access to Secrets. All
 the e2e tests ran as this identity.
@@ -57,8 +59,10 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
 
 - Every argument is an enum or a bounded integer in the tool's schema, and unknown fields
   are refused, before any tool code runs. `TestBadArgumentsAreRefusedAndNeverReachTheCluster`
-  sends hostile values through a real MCP session and asserts the cluster saw no call.
-- The injected command is fixed. Only the XID varies, from an allowlist of tested values.
+  sends hostile values through a real MCP session, asserts the schema refused them, and
+  asserts the cluster saw no call.
+- The injected command is fixed. Only the XID varies, from an allowlist of tested values. It
+  runs once: exec falls back from websocket to SPDY only when the upgrade itself failed.
 - There is no shell and no `kubectl`: the server calls the API with `client-go`.
 
 ### Hostile output
@@ -68,7 +72,11 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
   client it is data. This helps the model but cannot guarantee it ignores what it reads.
   The real limit is what the tools can do: a fooled model still only has these nine tools.
 - Control characters and terminal escapes are removed. Output is capped at 64 KiB, log
-  lines at 2000, event messages at 512 characters, errors at 500.
+  lines at 2000, event messages at 512 characters, errors at 500. What a pod prints during an
+  injection is capped and never returned.
+- A failed cluster call is reported by its kind only, such as "not permitted". client-go's
+  text holds the API server's address and the caller's identity, so it goes to the server's
+  log (`TestAnAPIFailureHidesTheAddressAndIdentity`).
 - A crash or a panic returns only `error executing tool <name>`, with details kept in the
   server's log (`TestACrashShowsNoDetail`, `TestAPanicShowsNoDetail`). A missing kubeconfig's
   error does not name its path.
@@ -82,16 +90,19 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
   A healthy node reaches no fault stage (`TestAHealthyNodeReachesNoFaultStage`).
 - A scenario resets the lab if a step fails, panics, or its context ends because the client
   left or a signal came (`TestAFailedStepResetsTheLab`, `TestAPanicInAStepResetsTheLab`,
-  `TestAStoppedContextResetsTheLab`). On SIGTERM the server waits for that reset before it
-  exits (`TestShutdownWaitsForARunningChange`, `TestSIGTERMResetsTheLab` (e2e)). **SIGKILL or a
-  power cut can still leave a fault behind:** `reset_lab` undoes it.
+  `TestAStoppedContextResetsTheLab`). SIGTERM cancels a running scenario, which resets the lab
+  before the server exits (`TestShutdownCancelsARunningChange`, `TestShutdownWaitsForARunningChange`,
+  `TestSIGTERMResetsTheLab` (e2e), which reads the audit line: `cancelled`, `restored: ok`). A second
+  signal ends the process at once. **SIGKILL, a second signal or a power cut can leave a fault
+  behind:** `reset_lab` undoes it.
 - Every attempted change writes one JSON line to stderr: tool, arguments, outcome, duration
   (`TestEveryChangeIsAudited`, `TestARefusedChangeIsAudited`).
 
 ### The image
 
-- One static binary on distroless static, about 32 MB: no shell, package manager or libc,
-  user 65532.
+- One static binary on distroless static, about 32 MB: no shell, package manager or libc.
+- It never runs as root: the image sets user 65532 (`TestImageDoesNotRunAsRoot` (e2e)). The command
+  below starts it as your own user instead, so it can read your private kubeconfig.
 - Bases pinned by digest, Go dependencies by `go.sum`, with `GOTOOLCHAIN=local` so a `go.mod`
   change cannot download a toolchain.
 - No credentials in the image. `.dockerignore` lets in only what the build needs.
@@ -108,8 +119,9 @@ docker run --rm -i --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:<digest>
 ```
 
-`--network=kind` reaches only the lab. Do not use `--network=host`, and mount that one file,
-never `~/.kube`. Add `--env NVSENTINEL_MCP_ALLOW_CHANGES=true` only for a run that should
+`--network=kind` is not a strict limit: that network is shared by every kind cluster on the host
+and can reach the host's gateway. It still beats `--network=host`, so do not use that, and mount
+that one file, never `~/.kube`. Add `--env NVSENTINEL_MCP_ALLOW_CHANGES=true` only for a run that should
 change the lab. The e2e tests ran the image with exactly these flags.
 
 Verify what you pull:

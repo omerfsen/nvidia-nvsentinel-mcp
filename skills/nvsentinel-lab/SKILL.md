@@ -1,5 +1,6 @@
 ---
 name: nvsentinel-lab
+license: Apache-2.0
 description: Test NVIDIA NVSentinel on a lab cluster through the nvsentinel-lab MCP server - read node and pipeline state, inject a fault into a simulated GPU, and check that NVSentinel detects it, cordons and drains the node, and recovers. Use when asked to test NVSentinel, check its fault pipeline, run its test scenarios, or read its health state on a cluster.
 ---
 

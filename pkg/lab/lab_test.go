@@ -443,6 +443,9 @@ func TestOpenRefusesABadKubeconfig(t *testing.T) {
 		"readable by the group": {0o640, "{token: x}", "readable by others"},
 		"readable by everyone":  {0o644, "{token: x}", "readable by others"},
 		"an exec plugin":        {0o600, `{exec: {apiVersion: client.authentication.k8s.io/v1, command: /bin/evil}}`, "credential plugin"},
+		"a token file":          {0o600, `{tokenFile: /etc/token}`, "credential files"},
+		"a client key file":     {0o600, `{client-key: /etc/key}`, "credential files"},
+		"impersonation":         {0o600, `{token: x, as: admin}`, "impersonates"},
 		"an auth provider":      {0o600, `{auth-provider: {name: x}}`, "credential plugin"},
 	}
 
@@ -452,6 +455,50 @@ func TestOpenRefusesABadKubeconfig(t *testing.T) {
 			require.ErrorContains(t, err, test.message)
 		})
 	}
+}
+
+func TestOpenRefusesAnUnsafeCluster(t *testing.T) {
+	for name, cluster := range map[string]string{
+		"no TLS verification": `{server: "https://127.0.0.1:1", insecure-skip-tls-verify: true}`,
+		"plain http":          `{server: "http://127.0.0.1:1"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeKubeconfig(t, 0o600, "{token: x}")
+			content, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			replaced := strings.Replace(string(content), `{server: "https://127.0.0.1:1"}`, cluster, 1)
+			require.NoError(t, os.WriteFile(path, []byte(replaced), 0o600))
+
+			_, err = Open(Config{Kubeconfig: path, LabContext: defaultLabContext})
+			require.ErrorContains(t, err, "refusing")
+		})
+	}
+}
+
+func TestAnAPIFailureHidesTheAddressAndIdentity(t *testing.T) {
+	w := newWorld(t)
+	w.client.PrependReactor("list", "nodes", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New(`Get "https://secret-host:6443/api": User "system:serviceaccount:a:b"`)
+	})
+
+	_, err := w.lab().Status(t.Context())
+
+	var userError *UserError
+
+	require.ErrorAs(t, err, &userError)
+	assert.NotContains(t, err.Error(), "secret-host")
+	assert.NotContains(t, err.Error(), "serviceaccount")
+}
+
+func TestLimitedWriterKeepsTheStartAndAcceptsTheRest(t *testing.T) {
+	var kept strings.Builder
+
+	writer := &limitedWriter{writer: &kept, left: 3}
+	written, err := writer.Write([]byte("abcdef"))
+	require.NoError(t, err)
+	assert.Equal(t, 6, written)
+	assert.Equal(t, "abc", kept.String())
 }
 
 func TestAMissingKubeconfigIsRefusedWithoutItsPath(t *testing.T) {
@@ -470,7 +517,7 @@ func TestOpenUsesOnlyTheConfiguredFile(t *testing.T) {
 	assert.Equal(t, defaultLabContext, l.context)
 }
 
-func TestEditingTheFileCannotRedirectAnOpenLab(t *testing.T) {
+func TestAChangedCurrentContextCannotRedirectAnOpenLab(t *testing.T) {
 	path := writeKubeconfig(t, 0o600, "{token: x}")
 	l, err := Open(Config{Kubeconfig: path, LabContext: defaultLabContext})
 	require.NoError(t, err)

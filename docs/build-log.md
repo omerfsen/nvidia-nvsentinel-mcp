@@ -70,13 +70,28 @@ An independent reviewer read the code twice. Each finding was checked against th
 
 What was left out and why is in [security.md](security.md).
 
+A third review, of the Go code, found more:
+
+- **SIGTERM did not reset the lab, and I had claimed it did.** The SDK waits for running handlers on
+  stdio and does not cancel them, so a scenario ran on to its normal end. The e2e test passed because
+  that end also leaves the lab healthy: it could not tell the two apart. **Fix:** the server cancels
+  handlers itself on shutdown, a second signal ends the process, and the test now reads the audit line.
+  It took 126 s before, as the whole scenario ran, and takes 66 s now.
+- **Exec could inject twice.** It fell back to SPDY after any error, including a failed command.
+  **Fix:** only after a failed upgrade, as kubectl does, with its output capped.
+- **That fallback had been hiding a permission gap.** With the fix, injection failed: websocket exec is
+  a `GET`, and needs `get` on `pods/exec`, not just `create`. The error was hidden too, by another fix
+  from the same review, so it had to be read from the server's log.
+- Cluster text and client-go errors reached the caller unfenced, and unknown fields passed on tools
+  with no arguments. Insecure kubeconfigs were accepted. RBAC had unused verbs.
+
 ## Step 6: Results (2026-11-04)
 
 On kind, NVSentinel v1.30.0 installed by omerfsen.aicr, as the server's own ServiceAccount:
 
-- The real binary over stdio: 7 of 7 e2e tests pass, including SIGTERM mid-scenario.
-- The image with every restriction in security.md: 6 pass, and the SIGTERM test is skipped, as a
-  signal goes to the docker client.
+- The real binary over stdio: all 7 e2e tests that apply pass, including SIGTERM mid-scenario.
+- The image with every restriction in security.md: all 7 that apply pass. The SIGTERM test is
+  skipped, as a signal goes to the docker client, and the non-root check runs only here.
 - Reports: [test-results](test-results/README.md).
 
 ## Step 7: Installing it (2026-11-04)

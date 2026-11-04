@@ -19,12 +19,15 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -169,6 +172,18 @@ func runScenario(t *testing.T, name string) {
 	assert.True(t, outcome.Passed, "failed at %q: %s", outcome.Failed, encoded)
 }
 
+// The image must not run as root, whatever flags it is started with.
+func TestImageDoesNotRunAsRoot(t *testing.T) {
+	image := os.Getenv("E2E_IMAGE")
+	if image == "" {
+		t.Skip("no image under test")
+	}
+
+	output, err := exec.Command("docker", "inspect", "--format", "{{.Config.User}}", image).Output() //nolint:gosec // The test's own image.
+	require.NoError(t, err)
+	assert.Equal(t, "65532:65532", strings.TrimSpace(string(output)))
+}
+
 func TestXID95(t *testing.T) { runScenario(t, "xid95") }
 
 func TestDCGMOutage(t *testing.T) { runScenario(t, "dcgm_outage") }
@@ -227,7 +242,10 @@ func TestSIGTERMResetsTheLab(t *testing.T) {
 		t.Skip("signals go to the docker client, not the server")
 	}
 
+	var stderr safeBuffer
+
 	command := serverCommand(t, kubeconfig(t), true)
+	command.Stderr = &stderr
 	session := connect(t, command)
 
 	done := make(chan struct{})
@@ -248,6 +266,13 @@ func TestSIGTERMResetsTheLab(t *testing.T) {
 
 	require.NoError(t, command.Process.Signal(syscall.SIGTERM))
 	<-done
+	require.NoError(t, waitForExit(command))
+
+	// The scenario clears its own fault at its end, so a healthy lab alone proves nothing.
+	// Its audit line says it stopped there and reset the lab instead.
+	assert.Contains(t, stderr.String(), `"tool":"run_test_scenario"`)
+	assert.Contains(t, stderr.String(), `"outcome":"cancelled"`)
+	assert.Contains(t, stderr.String(), `"restored":"ok"`)
 
 	waitFor(t, watcher, "healthy")
 	waitFor(t, watcher, "uncordoned")
@@ -255,10 +280,42 @@ func TestSIGTERMResetsTheLab(t *testing.T) {
 	waitFor(t, watcher, "workload_running")
 }
 
+// waitForExit reaps the server, which CommandTransport also waits for at Close.
+func waitForExit(command *exec.Cmd) error {
+	for range 600 {
+		if command.ProcessState != nil || command.Process.Signal(syscall.Signal(0)) != nil {
+			return nil
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	return errors.New("the server did not exit")
+}
+
+type safeBuffer struct {
+	mutex  sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *safeBuffer) Write(data []byte) (int, error) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	return b.buffer.Write(data)
+}
+
+func (b *safeBuffer) String() string {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	return b.buffer.String()
+}
+
 func waitFor(t *testing.T, session *mcp.ClientSession, stage string) {
 	t.Helper()
 
-	result := call(t, session, "wait_for_stage", map[string]any{"stage": stage, "timeoutSeconds": 600})
+	result := call(t, session, "wait_for_stage", map[string]any{"stage": stage, "timeoutSeconds": 300})
 	require.False(t, result.IsError, message(result))
 
 	encoded, err := json.Marshal(result.StructuredContent)

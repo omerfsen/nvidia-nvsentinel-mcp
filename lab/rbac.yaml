@@ -1,6 +1,9 @@
-# The MCP server's identity on the lab: what its tools need and nothing else. It
-# cannot read Secrets, touch the nvsentinel namespace, or exec outside gpu-operator.
+# The MCP server's identity on the lab: what its tools call and nothing else. It cannot
+# read Secrets, change anything in the nvsentinel namespace, or exec outside gpu-operator.
 # lab/mint-kubeconfig.sh makes a short-lived kubeconfig from this ServiceAccount.
+#
+# Never apply this where a real GPU Operator runs: it can exec into and delete any pod in
+# the gpu-operator namespace, which is the simulated hostengine only on the lab.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -19,10 +22,7 @@ metadata:
   name: nvsentinel-mcp-read
 rules:
   - apiGroups: [""]
-    resources: [nodes]
-    verbs: [get, list]
-  - apiGroups: [""]
-    resources: [events]
+    resources: [nodes, events]
     verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -45,8 +45,11 @@ metadata:
   namespace: nvsentinel
 rules:
   - apiGroups: [""]
-    resources: [pods, pods/log]
-    verbs: [get, list]
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -70,7 +73,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods]
-    verbs: [get, list]
+    verbs: [list]
   - apiGroups: [apps]
     resources: [deployments]
     resourceNames: [gpu-workload]
@@ -99,14 +102,15 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods]
-    verbs: [get, list, delete]
+    verbs: [list, delete]
   - apiGroups: [""]
     resources: [pods/exec]
-    verbs: [create]
+    # create for SPDY, get for the websocket protocol, which is a GET.
+    verbs: [create, get]
   - apiGroups: [""]
     resources: [services]
     resourceNames: [nvidia-dcgm]
-    verbs: [get, patch]
+    verbs: [patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

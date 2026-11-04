@@ -52,6 +52,9 @@ type Server struct {
 	mcp   *mcp.Server
 	open  OpenLab
 	audit *slog.Logger
+	// Ends when the server should stop. The SDK does not pass this to handlers on
+	// stdio: it waits for them, so they must watch it themselves.
+	shutdown context.Context //nolint:containedctx // The server's lifetime, not a request's.
 
 	// One change at a time: a second caller is refused, not queued, so a scenario's
 	// reset never races another fault.
@@ -63,15 +66,16 @@ type Server struct {
 }
 
 // New builds the server and registers its tools.
-func New(version string, open OpenLab, audit *slog.Logger) *Server {
+func New(shutdown context.Context, version string, open OpenLab, audit *slog.Logger) *Server {
 	server := &Server{
 		mcp: mcp.NewServer(
 			&mcp.Implementation{Name: "nvsentinel-lab", Version: version},
 			&mcp.ServerOptions{Instructions: instructions},
 		),
-		open:  open,
-		audit: audit,
-		waits: make(chan struct{}, maxConcurrentWaits),
+		open:     open,
+		audit:    audit,
+		shutdown: shutdown,
+		waits:    make(chan struct{}, maxConcurrentWaits),
 	}
 	server.register()
 
@@ -80,6 +84,17 @@ func New(version string, open OpenLab, audit *slog.Logger) *Server {
 
 // MCP returns the underlying MCP server, to run it on a transport.
 func (s *Server) MCP() *mcp.Server { return s.mcp }
+
+// followShutdown returns ctx, also cancelled when the server is told to stop.
+func (s *Server) followShutdown(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(s.shutdown, cancel)
+
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
 
 // Wait blocks until running changes have finished, or ctx ends.
 func (s *Server) Wait(ctx context.Context) error {
@@ -183,6 +198,11 @@ func schemaFor[T any](edit func(properties map[string]*jsonschema.Schema)) *json
 	return schema
 }
 
+func withEmptyInput(tool *mcp.Tool) *mcp.Tool {
+	tool.InputSchema = schemaFor[Empty](nil)
+	return tool
+}
+
 func enum(values []string) []any {
 	out := make([]any, 0, len(values))
 	for _, value := range values {
@@ -202,13 +222,14 @@ func (s *Server) register() {
 }
 
 func (s *Server) registerReadTools() {
-	register(s, readTool("lab_status",
-		"Nodes (cordon, NVSentinel state, failing GPU checks), NVSentinel and DCGM pods, the workload."),
+	register(s, withEmptyInput(readTool("lab_status",
+		"Nodes (cordon, NVSentinel state, failing GPU checks), NVSentinel and DCGM pods, the workload.")),
 		readHandler(s, "lab_status", func(ctx context.Context, l *lab.Lab, _ Empty) (*lab.Status, error) {
 			return l.Status(ctx)
 		}))
 
-	register(s, readTool("list_scenarios", "What this server can test: scenarios, stages, allowed XIDs, log sources."),
+	register(s, withEmptyInput(readTool("list_scenarios",
+		"What this server can test: scenarios, stages, allowed XIDs, log sources.")),
 		func(context.Context, *mcp.CallToolRequest, Empty) (*mcp.CallToolResult, *Catalog, error) {
 			return nil, &Catalog{
 				Scenarios:     lab.Scenarios(),
@@ -279,16 +300,16 @@ func (s *Server) registerChangeTools() {
 			return l.InjectFault(ctx, in.XID)
 		}))
 
-	register(s, changeTool("clear_fault",
-		"Restart the simulated hostengine, which drops an injected fault. Only when allowed, on the kind lab."),
+	register(s, withEmptyInput(changeTool("clear_fault",
+		"Restart the simulated hostengine, which drops an injected fault. Only when allowed, on the kind lab.")),
 		changeHandler(s, "clear_fault",
 			func(ctx context.Context, l *lab.Lab, _ *mcp.CallToolRequest, _ Empty) (*map[string]string, error) {
 				result, err := l.ClearFault(ctx)
 				return &result, err
 			}))
 
-	register(s, changeTool("reset_lab",
-		"Undo anything the tests can do: a DCGM outage and an injected fault. Only when allowed, on the kind lab."),
+	register(s, withEmptyInput(changeTool("reset_lab",
+		"Undo anything the tests can do: a DCGM outage and an injected fault. Only when allowed, on the kind lab.")),
 		changeHandler(s, "reset_lab",
 			func(ctx context.Context, l *lab.Lab, _ *mcp.CallToolRequest, _ Empty) (*ResetOutput, error) {
 				if err := l.Reset(ctx); err != nil {
@@ -363,6 +384,9 @@ func readHandler[In, Out any](
 	s *Server, tool string, run func(context.Context, *lab.Lab, In) (*Out, error),
 ) mcp.ToolHandlerFor[In, *Out] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (result *mcp.CallToolResult, out *Out, err error) {
+		ctx, cancel := s.followShutdown(ctx)
+		defer cancel()
+
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				err = callerError(tool, fmt.Errorf("panic: %v", recovered))
@@ -399,8 +423,11 @@ func changeHandler[In, Out any](
 
 		s.inFlight.Add(1)
 
+		ctx, cancel := s.followShutdown(ctx)
+
 		defer func() {
 			defer s.inFlight.Done()
+			defer cancel()
 			defer s.changing.Unlock()
 
 			if recovered := recover(); recovered != nil {
@@ -416,7 +443,7 @@ func changeHandler[In, Out any](
 		}
 
 		out, err = run(ctx, connection, request, in)
-		s.logChange(tool, arguments, changeOutcome(ctx, out, err), start)
+		s.logChange(tool, arguments, changeOutcome(ctx, out, err), start, restoredOf(out)...)
 
 		if err != nil {
 			return nil, nil, callerError(tool, err)
@@ -447,8 +474,19 @@ func changeOutcome(ctx context.Context, out any, err error) string {
 
 // logChange writes one JSON line to stderr per attempted change. Arguments are values
 // the schema allowed, never free text.
-func (s *Server) logChange(tool, arguments, outcome string, start time.Time) {
-	s.audit.Info("change",
+func (s *Server) logChange(tool, arguments, outcome string, start time.Time, extra ...any) {
+	attributes := []any{
 		"tool", tool, "arguments", arguments, "outcome", outcome,
-		"seconds", time.Since(start).Round(100*time.Millisecond).Seconds())
+		"seconds", time.Since(start).Round(100 * time.Millisecond).Seconds(),
+	}
+	s.audit.Info("change", append(attributes, extra...)...)
+}
+
+// restoredOf adds whether a stopped scenario reset the lab to its audit line.
+func restoredOf(out any) []any {
+	if report, ok := out.(*lab.Report); ok && report != nil && report.Restored != "" {
+		return []any{"restored", report.Restored}
+	}
+
+	return nil
 }

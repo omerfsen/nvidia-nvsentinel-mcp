@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
@@ -107,7 +108,7 @@ func (l *Lab) RequireLab(ctx context.Context) error {
 
 	nodes, err := l.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return failf("listing nodes: %v", err)
+		return apiFailure("listing nodes", err)
 	}
 
 	if len(nodes.Items) == 0 {
@@ -149,7 +150,7 @@ func onlySimulatedImages(pod *corev1.Pod) bool {
 func (l *Lab) gpuNode(ctx context.Context) (*corev1.Node, error) {
 	nodes, err := l.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: gpuNodeSelector})
 	if err != nil {
-		return nil, failf("listing GPU nodes: %v", err)
+		return nil, apiFailure("listing GPU nodes", err)
 	}
 
 	if len(nodes.Items) != 1 {
@@ -162,7 +163,7 @@ func (l *Lab) gpuNode(ctx context.Context) (*corev1.Node, error) {
 func (l *Lab) dcgmPods(ctx context.Context, node string) ([]corev1.Pod, error) {
 	pods, err := l.client.CoreV1().Pods(dcgmNamespace).List(ctx, metav1.ListOptions{LabelSelector: dcgmSelector})
 	if err != nil {
-		return nil, failf("listing DCGM pods: %v", err)
+		return nil, apiFailure("listing DCGM pods", err)
 	}
 
 	live := make([]corev1.Pod, 0, len(pods.Items))
@@ -254,7 +255,7 @@ func nodeReady(node *corev1.Node) bool {
 func (l *Lab) Status(ctx context.Context) (*Status, error) {
 	nodes, err := l.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, failf("listing nodes: %v", err)
+		return nil, apiFailure("listing nodes", err)
 	}
 
 	status := &Status{Context: l.context, ChangesAllowed: l.allowChanges, Nodes: []NodeStatus{}}
@@ -290,7 +291,7 @@ func (l *Lab) Status(ctx context.Context) (*Status, error) {
 func (l *Lab) podStatuses(ctx context.Context, namespace, selector string) ([]PodStatus, error) {
 	pods, err := l.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
-		return nil, failf("listing pods in %s: %v", namespace, err)
+		return nil, apiFailure("listing pods in "+namespace, err)
 	}
 
 	out := make([]PodStatus, 0, len(pods.Items))
@@ -332,7 +333,7 @@ func (l *Lab) Logs(ctx context.Context, component string, tail int64) (string, e
 
 	pods, err := l.client.CoreV1().Pods(nvsentinelNamespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
-		return "", failf("listing %s pods: %v", component, err)
+		return "", apiFailure("listing "+component+" pods", err)
 	}
 
 	lines := min(max(tail, 1), MaxLogLines)
@@ -364,13 +365,13 @@ func (l *Lab) containerLogs(ctx context.Context, pod, container string, lines in
 
 	stream, err := l.client.CoreV1().Pods(nvsentinelNamespace).GetLogs(pod, options).Stream(ctx)
 	if err != nil {
-		return "", failf("reading logs of %s: %v", pod, err)
+		return "", apiFailure("reading logs of "+pod, err)
 	}
 	defer stream.Close()
 
 	text, err := io.ReadAll(io.LimitReader(stream, limit))
 	if err != nil {
-		return "", failf("reading logs of %s: %v", pod, err)
+		return "", apiFailure("reading logs of "+pod, err)
 	}
 
 	return string(text), nil
@@ -396,7 +397,7 @@ func (l *Lab) NodeEvents(ctx context.Context, limit int) (string, error) {
 
 	events, err := l.client.CoreV1().Events(metav1.NamespaceAll).List(ctx, metav1.ListOptions{FieldSelector: selector})
 	if err != nil {
-		return "", failf("listing events: %v", err)
+		return "", apiFailure("listing events", err)
 	}
 
 	items := events.Items
@@ -424,10 +425,9 @@ func (l *Lab) NodeEvents(ctx context.Context, limit int) (string, error) {
 
 // InjectResult says what was injected where.
 type InjectResult struct {
-	Node   string `json:"node"`
-	Pod    string `json:"pod"`
-	XID    int    `json:"xid"`
-	Output string `json:"output"`
+	Node string `json:"node"`
+	Pod  string `json:"pod"`
+	XID  int    `json:"xid"`
 }
 
 // AllowedXIDs are the XIDs that were tested. The command is otherwise fixed.
@@ -455,12 +455,15 @@ func (l *Lab) InjectFault(ctx context.Context, xid int) (*InjectResult, error) {
 
 	command := []string{"dcgmi", "test", "--inject", "--gpuid", "0", "-f", xidField, "-v", strconv.Itoa(xid)}
 
+	// The pod's output stays out of the result: it is cluster text, and this call does not fence.
 	output, err := l.execer.Exec(ctx, dcgmNamespace, pod.Name, command)
 	if err != nil {
-		return nil, failf("injecting into %s: %v", pod.Name, err)
+		return nil, apiFailure("injecting into "+pod.Name, err)
 	}
 
-	return &InjectResult{Node: node.Name, Pod: pod.Name, XID: xid, Output: Clean(output, maxErrorChars)}, nil
+	slog.Debug("injected", "pod", pod.Name, "xid", xid, "output", Clean(output, maxErrorChars))
+
+	return &InjectResult{Node: node.Name, Pod: pod.Name, XID: xid}, nil
 }
 
 // restartFakeDCGM deletes the simulated hostengine and waits for its replacement.
@@ -477,7 +480,7 @@ func (l *Lab) restartFakeDCGM(ctx context.Context) (string, error) {
 
 	err = l.client.CoreV1().Pods(dcgmNamespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
 	if err != nil {
-		return "", failf("deleting %s: %v", pod.Name, err)
+		return "", apiFailure("deleting "+pod.Name, err)
 	}
 
 	result, err := l.WaitFor(ctx, StageDCGMPodReady, 3*time.Minute)
@@ -513,7 +516,7 @@ func (l *Lab) pointDCGMService(ctx context.Context, app string) error {
 		ctx, dcgmService, types.MergePatchType, []byte(patch), metav1.PatchOptions{},
 	)
 	if err != nil {
-		return failf("patching the %s Service: %v", dcgmService, err)
+		return apiFailure("patching the "+dcgmService+" Service", err)
 	}
 
 	return nil

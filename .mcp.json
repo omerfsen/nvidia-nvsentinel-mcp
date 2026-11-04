@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "nvsentinel-lab": {
-      "command": "bin/nvsentinel-mcp",
+      "command": "bin/nvidia-nvsentinel-mcp",
       "env": {
         "NVSENTINEL_MCP_ALLOW_CHANGES": "true"
       }

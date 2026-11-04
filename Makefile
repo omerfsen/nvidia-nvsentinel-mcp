@@ -1,7 +1,7 @@
 # nvidia-nvsentinel-mcp. Run `make help` for targets.
 SHELL := /bin/bash
 export GOTOOLCHAIN := local
-BINARY := bin/nvsentinel-mcp
+BINARY := bin/nvidia-nvsentinel-mcp
 IMAGE ?= nvsentinel-mcp:local
 LINT_IMAGE := golangci/golangci-lint:v2.15.0
 RESULTS := $(CURDIR)/docs/test-results
