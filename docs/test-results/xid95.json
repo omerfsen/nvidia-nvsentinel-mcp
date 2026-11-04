@@ -1,12 +1,12 @@
 {
   "passed": true,
   "scenario": "xid95",
-  "seconds": 135.3,
+  "seconds": 111.3,
   "steps": [
     {
       "detail": "GpuDcgmConnectivityFailure=False",
       "ok": true,
-      "seconds": 9,
+      "seconds": 0,
       "step": "wait:dcgm_connected"
     },
     {
@@ -24,11 +24,11 @@
     {
       "detail": "readyReplicas=1, on the GPU node: true",
       "ok": true,
-      "seconds": 3,
+      "seconds": 0,
       "step": "wait:workload_running"
     },
     {
-      "detail": "pod nvidia-dcgm-9bzfx",
+      "detail": "pod nvidia-dcgm-bgh5p",
       "ok": true,
       "seconds": 0,
       "step": "inject_xid95"
@@ -36,7 +36,7 @@
     {
       "detail": "failing: [GpuMemWatch]",
       "ok": true,
-      "seconds": 12,
+      "seconds": 3,
       "step": "wait:fault_detected"
     },
     {
@@ -54,11 +54,11 @@
     {
       "detail": "state=drain-succeeded",
       "ok": true,
-      "seconds": 72.1,
+      "seconds": 69.1,
       "step": "wait:drain_succeeded"
     },
     {
-      "detail": "deleted nvidia-dcgm-9bzfx",
+      "detail": "deleted nvidia-dcgm-bgh5p",
       "ok": true,
       "seconds": 6.1,
       "step": "clear_fault"

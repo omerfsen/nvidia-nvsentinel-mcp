@@ -3,7 +3,7 @@
   "context": "kind-nvsentinel-lab",
   "dcgmPods": [
     {
-      "name": "nvidia-dcgm-t8p7m",
+      "name": "nvidia-dcgm-84gr6",
       "node": "nvsentinel-lab-worker",
       "phase": "Running",
       "ready": true,
@@ -32,21 +32,21 @@
       "node": "nvsentinel-lab-control-plane",
       "phase": "Running",
       "ready": true,
-      "restarts": 2
+      "restarts": 7
     },
     {
       "name": "gpu-health-monitor-dcgm-4.x-8f4tl",
       "node": "nvsentinel-lab-worker",
       "phase": "Running",
       "ready": true,
-      "restarts": 0
+      "restarts": 3
     },
     {
       "name": "node-drainer-65965cf5-tmgzc",
       "node": "nvsentinel-lab-control-plane",
       "phase": "Running",
       "ready": true,
-      "restarts": 2
+      "restarts": 7
     },
     {
       "name": "nvsentinel-external-mongodb-setup-2592000-1bdbf25b-bx8g7",
@@ -60,40 +60,40 @@
       "node": "nvsentinel-lab-control-plane",
       "phase": "Running",
       "ready": true,
-      "restarts": 0
+      "restarts": 6
     },
     {
       "name": "platform-connectors-48lv5",
       "node": "nvsentinel-lab-control-plane",
       "phase": "Running",
       "ready": true,
-      "restarts": 2
+      "restarts": 7
     },
     {
       "name": "platform-connectors-bc46x",
       "node": "nvsentinel-lab-worker",
       "phase": "Running",
       "ready": true,
-      "restarts": 2
+      "restarts": 7
     },
     {
       "name": "psmdb-operator-7998479784-58gzd",
       "node": "nvsentinel-lab-control-plane",
       "phase": "Running",
       "ready": true,
-      "restarts": 0
+      "restarts": 5
     }
   ],
   "workload": [
     {
-      "name": "gpu-workload-7c79b666dc-9rbxz",
+      "name": "gpu-workload-7c79b666dc-hkttw",
       "node": "nvsentinel-lab-worker",
-      "phase": "Pending",
-      "ready": false,
+      "phase": "Running",
+      "ready": true,
       "restarts": 0
     },
     {
-      "name": "gpu-workload-7c79b666dc-knjlr",
+      "name": "gpu-workload-7c79b666dc-j4dh8",
       "node": "nvsentinel-lab-worker",
       "phase": "Running",
       "ready": true,

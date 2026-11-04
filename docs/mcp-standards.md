@@ -67,7 +67,7 @@ are the same idea as `docs/tools.json` and the test that fails when it goes stal
 |---|---|---|
 | `server.json` valid against the [2025-12-11 schema](https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json) | Yes | By hand, with `jsonschema-go` |
 | `server.json` lists every setting | Yes | `TestServerJSONNamesEverySetting` |
-| [Image label](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx) `io.modelcontextprotocol.server.name` matches `server.json` | Yes | By hand, on the v0.3.0 image |
+| [Image label](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx) `io.modelcontextprotocol.server.name` matches `server.json` | Yes | By hand, on the v0.4.0 image |
 | Image on an allowed registry (Docker Hub) | Yes | |
 | `SECURITY.md`, `AGENTS.md`, `CHANGELOG.md`, `LICENSE` | Yes | |
 
