@@ -221,6 +221,19 @@ LLM key and was not run. Added `glama.json` so the Glama listing can be claimed.
 bundle, which needs binaries per platform from the release pipeline. Whether M8ven now reads the tools is known only after
 its next scan of `main`.
 
+## Step 15: Release v0.5.0 (2026-11-08)
+
+From the published release, with the README's commands: all six binaries and the SBOM match `checksums.txt`, and each
+file is the right format. The `linux/amd64` and `linux/arm64` provenance verified (`go-binaries.yml` at `refs/tags/v0.5.0`).
+`linux/arm64` reports 0.5.0, and Cisco `mcp-scanner` (YARA and schema) over stdio found its 9 tools safe.
+Image: `sha256:8c3a2a9f284812704f1e23a450d077e638f720602f44b8e490c6835bada36dff`, linux/amd64, user 65532, with the
+Registry label, and its provenance verified (`docker.yml` at `refs/tags/v0.5.0`).
+
+**Not run:** the e2e tests on this release. The machine that verified it has no kind lab and is arm64, so the amd64
+image could not start there either. The results in [test-results](test-results/README.md) still come from the v0.4.0
+binary. The change since then only rewrites how tools are defined and described, and `docs/tools.json` showed every
+name, schema and annotation unchanged. The other four binaries were not run.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, MCP Inspector, the official conformance suite, and checking the image's cosign signature and SBOM by hand.
