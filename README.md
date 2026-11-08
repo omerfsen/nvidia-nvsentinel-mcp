@@ -194,3 +194,5 @@ Every step, failure and dead end is in [docs/build-log.md](docs/build-log.md).
 
 Apache-2.0. `lab/gpu-spec.yaml` and `lab/fake-dcgm.yaml` come from NVSentinel, under
 the same license.
+
+[![M8ven Score](https://m8ven.ai/badge/mcp/omerfsen-nvidia-nvsentinel-mcp-6yp1hu?v=d827fe108470f09efe4d3cad0ef26408)](https://m8ven.ai/mcp/omerfsen-nvidia-nvsentinel-mcp-6yp1hu?s=readme)
