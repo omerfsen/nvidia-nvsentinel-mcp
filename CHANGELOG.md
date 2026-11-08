@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.4.0...v0.5.0) (2026-11-08)
+
+
+### Features
+
+* define tools as literals and describe them fully ([#17](https://github.com/omerfsen/nvidia-nvsentinel-mcp/issues/17)) ([76ea3b3](https://github.com/omerfsen/nvidia-nvsentinel-mcp/commit/76ea3b32ba6c355d5b851d5ac97bdd29e901f7dc))
+
 ## [0.4.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.3.0...v0.4.0) (2026-11-04)
 
 
