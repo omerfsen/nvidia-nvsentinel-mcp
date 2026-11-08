@@ -203,6 +203,24 @@ had already ended. It now fails if a reply came before the cancel, and checks th
 counts only calls that pass schema validation, so the docs now say that, and that two claims in
 [mcp-standards.md](mcp-standards.md) went beyond their tests, so tests were added for them.
 
+## Step 14: Make the tools readable by scanners (2026-11-08)
+
+M8ven graded the repo **C, "Limited view"**: no bad findings, but "tool surface unread". Its parser finds a Go server's
+tools in `mcp.Tool{Name: "..."}` literals, as it does for github-mcp-server. Ours were built by `readTool(name, ...)`, so it
+only saw `Name: name`. Each tool is now a literal and the helpers only add the annotations. `docs/tools.json` showed the
+change kept every name, schema and annotation.
+
+Tool and argument descriptions now say what each returns, when to use it, and what it changes, which Glama and
+Smithery grade. Two first drafts claimed `reset_lab` waits for recovery and events come newest first; the code does neither,
+so they were corrected.
+
+Cisco `mcp-scanner` (YARA and schema analyzers, offline) over stdio: 9 tools, all safe. Its `behavioral` source check needs an
+LLM key and was not run. Added `glama.json` so the Glama listing can be claimed.
+
+**Not done:** the Registry entry is still unpublished (needs a GitHub login). Smithery takes stdio servers only as an MCPB
+bundle, which needs binaries per platform from the release pipeline. Whether M8ven now reads the tools is known only after
+its next scan of `main`.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, MCP Inspector, the official conformance suite, and checking the image's cosign signature and SBOM by hand.
