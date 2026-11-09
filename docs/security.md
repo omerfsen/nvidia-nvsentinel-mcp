@@ -109,7 +109,7 @@ on any pod in `gpu-operator`. That is fine on the lab and wrong anywhere else.
 - No credentials in the image. `.dockerignore` lets in only what the build needs.
 - Scanned with Trivy and OSV: no fixable CRITICAL or HIGH. The cicd `docker` pipeline repeats
   the Trivy scan before pushing, then signs the digest with cosign and attaches an SBOM and
-  build provenance. v0.5.0's provenance was verified with `gh attestation verify`; its signature
+  build provenance. v0.5.1's provenance was verified with `gh attestation verify`; its signature
   and SBOM are attached, but were not checked by hand.
 
 Run it with everything off, and pin the digest:
@@ -118,7 +118,7 @@ Run it with everything off, and pin the digest:
 docker run --rm -i --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --user "$(id -u):$(id -g)" --memory=128m --cpus=1 --pids-limit=64 --network=kind \
   --volume "$HOME/.kube/nvsentinel-lab-mcp-docker.yaml:/kube/config:ro" \
-  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:8c3a2a9f284812704f1e23a450d077e638f720602f44b8e490c6835bada36dff
+  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:cb6fba848870580f77d347d476a2a7003cd336cd6f4807a72928013538d7aed9
 ```
 
 `--network=kind` is not a strict limit: that network is shared by every kind cluster on the host
