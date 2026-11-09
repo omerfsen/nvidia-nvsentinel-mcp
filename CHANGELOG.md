@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.5.0...v0.5.1) (2026-11-09)
+
+
+### Bug fixes
+
+* set all four tool hints in each tool literal ([#20](https://github.com/omerfsen/nvidia-nvsentinel-mcp/issues/20)) ([eb48494](https://github.com/omerfsen/nvidia-nvsentinel-mcp/commit/eb48494c3ec4ec6dfb8855ee723c09a60d28cfee))
+
 ## [0.5.0](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.4.0...v0.5.0) (2026-11-08)
 
 
