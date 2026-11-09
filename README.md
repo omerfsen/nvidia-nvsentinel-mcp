@@ -25,7 +25,7 @@ gap are in [docs/mcp-standards.md](docs/mcp-standards.md), with links to check f
 | Standard | Version |
 |---|---|
 | [Model Context Protocol](https://modelcontextprotocol.io/specification/latest) | 2026-07-28, and back to 2024-11-05 |
-| [MCP Registry `server.json`](https://github.com/modelcontextprotocol/registry/blob/main/docs/reference/server-json/generic-server-json.md) | 2025-12-11, valid and not yet published |
+| [MCP Registry `server.json`](https://github.com/modelcontextprotocol/registry/blob/main/docs/reference/server-json/generic-server-json.md) | 2025-12-11, valid and published (0.5.1) |
 | [AGENTS.md](https://agents.md) | [AGENTS.md](AGENTS.md), imported by `CLAUDE.md` |
 | [Agent Skills](https://agentskills.io/home) | [skills/nvsentinel-lab](skills/nvsentinel-lab/SKILL.md) |
 
@@ -141,8 +141,8 @@ npx skills add omerfsen/nvidia-nvsentinel-mcp --skill nvsentinel-lab
 ```
 
 The GitHub CLI has no `gh mcp add` as of v2.103.2: `gh skill` installs skills, and MCP servers
-go in through the client. An entry for the official MCP Registry is ready in `server.json` but
-not published.
+go in through the client. It is listed on the official MCP Registry as
+`io.github.omerfsen/nvidia-nvsentinel-mcp`.
 
 ## Run the tests on kind
 

@@ -73,7 +73,6 @@ are the same idea as `docs/tools.json` and the test that fails when it goes stal
 
 ## Not done or not tested
 
-- **Published to the MCP Registry:** `server.json` is ready. It needs `mcp-publisher` and your GitHub login.
 - **[MCP Inspector](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector.md):** not run. To try it:
   `npx @modelcontextprotocol/inspector --cli nvidia-nvsentinel-mcp --method tools/list`
 - **[Conformance suite](https://github.com/modelcontextprotocol/conformance):** not run. Its server mode takes a

@@ -258,6 +258,16 @@ label, and its provenance verified (`docker.yml` at `refs/tags/v0.5.1`).
 **Not run:** the e2e tests on this release, for the same reasons as v0.5.0. The change since then only sets the tool
 hints, and `docs/tools.json` showed only `idempotentHint` changed. The other four binaries were not run.
 
+## Step 18: Publish v0.5.1 to the MCP Registry (2026-11-09)
+
+Installed `mcp-publisher` v1.8.5, the newest release at least two weeks old. It has no GitHub attestations, so its
+checksum file was checked against the tarball and with `cosign verify-blob` against the release's sigstore bundle.
+`mcp-publisher validate` passed, then `publish` from `main` after the `docs:` PR set `server.json` to 0.5.1. The Registry
+lists `io.github.omerfsen/nvidia-nvsentinel-mcp` 0.5.1 as active and latest, with the image and its three settings.
+
+**Failed:** three device logins run in the background expired (about 15 minutes each) before the code was entered. Running
+`mcp-publisher login github` in the terminal, while at a browser, worked first time.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, MCP Inspector, the official conformance suite, and checking the image's cosign signature and SBOM by hand.
