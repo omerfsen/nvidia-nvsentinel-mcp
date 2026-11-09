@@ -58,8 +58,9 @@ tests, so run those yourself when the change reaches the cluster.
   Never add a free-form string, path, or anything that names a pod, namespace, file or command.
 - **Every change in `pkg/lab` calls `RequireLab` first.** The handler does not do it for you. It is
   what limits changes to the kind lab, and only when the operator allows them.
-- **Change tools use `changeTool` and `changeHandler`**, which give one change at a time and an audit
-  line. Read tools use `readTool` and `readHandler`.
+- **Change tools use `changeHandler`**, which gives one change at a time and an audit line. Read tools
+  use `readHandler`. Write each tool as an `mcp.Tool` literal with all four annotation hints set in it,
+  so a scanner reading the source sees them.
 - **Cluster text is hostile.** Return it through `Fence`, cap it, and clean it with `Clean`. Report API
   failures with `apiFailure`, which keeps the address and identity out of what the caller sees.
 - **No shell, no `kubectl`, no listener.** Use `client-go`. An HTTP transport needs real
@@ -78,7 +79,7 @@ reboot the host. Never apply `lab/rbac.yaml` where a real GPU Operator runs.
 
 1. Add any cluster logic to `pkg/lab`, with a test. A change calls `RequireLab` first.
 2. Register it in `registerReadTools` or `registerChangeTools` in `pkg/server/server.go`, with a name,
-   a title, a description, and a schema from `schemaFor` (or `withEmptyInput`).
+   a title, all four annotation hints, a description, and a schema from `schemaFor` (or `withEmptyInput`).
 3. Add it to `TestToolsAreListedAndMarkedReadOrChange`. Send hostile values through
    `TestBadArgumentsAreRefusedAndNeverReachTheCluster` if it takes arguments.
 4. Add a row to the README's tool table, then run `make docs`.

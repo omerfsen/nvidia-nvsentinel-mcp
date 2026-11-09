@@ -234,6 +234,18 @@ image could not start there either. The results in [test-results](test-results/R
 binary. The change since then only rewrites how tools are defined and described, and `docs/tools.json` showed every
 name, schema and annotation unchanged. The other four binaries were not run.
 
+## Step 16: Annotations a scanner can see (2026-11-09)
+
+After v0.5.0, M8ven read all nine tools and the grade went from C to **B**. Its one finding left was "no tools have
+read-only/destructive annotations", with all four hints missing on 9/9 tools. The hints were on the wire, but set by the
+`readTool` and `changeTool` helpers, which a reader of the source does not follow, and `idempotentHint` was never set, so
+it went out as false on every tool. Each tool literal now holds all four hints, and the helpers are gone. Read tools are
+now `idempotentHint` true. Change tools stay false: each call restarts the DCGM pod again. A test checks all four on
+every tool.
+
+**Not done:** whether M8ven gives an A is known only after its next scan. Its page also says Go is only partly covered
+("Limited view") and weighs reputation (stars, age), which code cannot change.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, MCP Inspector, the official conformance suite, and checking the image's cosign signature and SBOM by hand.
