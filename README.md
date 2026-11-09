@@ -122,7 +122,7 @@ claude mcp add nvsentinel-lab -- docker run --rm -i --read-only --cap-drop=ALL \
   --security-opt=no-new-privileges --user "$(id -u):$(id -g)" --memory=128m --cpus=1 \
   --pids-limit=64 --network=kind \
   --volume "$HOME/.kube/nvsentinel-lab-mcp-docker.yaml:/kube/config:ro" \
-  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:bd1bcd5e9629e635ae5b64c91b480634ace83c700aae111e523036845aa269b6
+  docker.io/omerfsen/nvidia-nvsentinel-mcp@sha256:8c3a2a9f284812704f1e23a450d077e638f720602f44b8e490c6835bada36dff
 ```
 
 Other clients take the same command in their MCP config. Use the full path if the binary is not on
