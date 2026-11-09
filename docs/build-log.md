@@ -246,6 +246,18 @@ every tool.
 **Not done:** whether M8ven gives an A is known only after its next scan. Its page also says Go is only partly covered
 ("Limited view") and weighs reputation (stars, age), which code cannot change.
 
+## Step 17: Release v0.5.1 (2026-11-09)
+
+From the published release: all six binaries and the SBOM match `checksums.txt`, and each file is the right format. The
+`linux/amd64` and `linux/arm64` provenance verified (`go-binaries.yml` at `refs/tags/v0.5.1`). `linux/arm64` reports 0.5.1,
+and its `tools/list` over stdio gives all four hints on every tool: read tools read-only and idempotent, change tools
+destructive and not idempotent, none open-world. Image:
+`sha256:cb6fba848870580f77d347d476a2a7003cd336cd6f4807a72928013538d7aed9`, linux/amd64, user 65532, with the Registry
+label, and its provenance verified (`docker.yml` at `refs/tags/v0.5.1`).
+
+**Not run:** the e2e tests on this release, for the same reasons as v0.5.0. The change since then only sets the tool
+hints, and `docs/tools.json` showed only `idempotentHint` changed. The other four binaries were not run.
+
 ## Not run yet
 
 A real GPU, AICR on NVKE, remediation, MCP Inspector, the official conformance suite, and checking the image's cosign signature and SBOM by hand.
