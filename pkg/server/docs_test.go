@@ -147,8 +147,9 @@ func renderTools(t *testing.T, init *mcp.InitializeResult, tools []*mcp.Tool) st
 
 func renderTool(out *strings.Builder, tool *mcp.Tool) {
 	fmt.Fprintf(out, "\n## %s\n\n**%s.** %s\n\n", tool.Name, tool.Title, tool.Description)
-	fmt.Fprintf(out, "Annotations: `readOnlyHint` %t, `destructiveHint` %t, `openWorldHint` %t.\n\n",
-		tool.Annotations.ReadOnlyHint, *tool.Annotations.DestructiveHint, *tool.Annotations.OpenWorldHint)
+	fmt.Fprintf(out, "Annotations: `readOnlyHint` %t, `destructiveHint` %t, `idempotentHint` %t, `openWorldHint` %t.\n\n",
+		tool.Annotations.ReadOnlyHint, *tool.Annotations.DestructiveHint, tool.Annotations.IdempotentHint,
+		*tool.Annotations.OpenWorldHint)
 
 	input := asObject(tool.InputSchema)
 	properties := asObject(input["properties"])

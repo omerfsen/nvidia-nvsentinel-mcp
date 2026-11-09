@@ -25,7 +25,7 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "Component logs"
@@ -124,7 +124,7 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "Lab status"
@@ -308,7 +308,7 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "List scenarios"
@@ -369,7 +369,7 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "Node events"
@@ -523,7 +523,7 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "Wait for a stage"

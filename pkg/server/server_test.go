@@ -202,6 +202,9 @@ func TestToolsAreListedAndMarkedReadOrChange(t *testing.T) {
 		got[tool.Name] = tool.Annotations.ReadOnlyHint
 		require.NotNil(t, tool.Annotations.DestructiveHint, tool.Name)
 		assert.Equal(t, !tool.Annotations.ReadOnlyHint, *tool.Annotations.DestructiveHint, tool.Name)
+		assert.Equal(t, tool.Annotations.ReadOnlyHint, tool.Annotations.IdempotentHint, tool.Name)
+		require.NotNil(t, tool.Annotations.OpenWorldHint, tool.Name)
+		assert.False(t, *tool.Annotations.OpenWorldHint, tool.Name)
 		assert.NotEmpty(t, tool.Description, tool.Name)
 		assert.NotEmpty(t, tool.Title, tool.Name)
 		assert.Equal(t, tool.Title, tool.Annotations.Title, tool.Name)
