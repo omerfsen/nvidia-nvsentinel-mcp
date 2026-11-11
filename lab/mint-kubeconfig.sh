@@ -3,6 +3,7 @@
 # admin one: one for the host, one for a container on kind's Docker network. The token
 # stays out of argv, and each file is checked before it is trusted.
 source "$(dirname "$0")/common.sh"
+ensure_kind
 TOKEN_HOURS=${TOKEN_HOURS:-8}
 EXPECTED_USER=system:serviceaccount:nvsentinel-mcp:nvsentinel-mcp
 TOKEN=$(admin create token nvsentinel-mcp -n nvsentinel-mcp --duration="${TOKEN_HOURS}h")

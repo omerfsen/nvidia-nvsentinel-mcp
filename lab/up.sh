@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Create the kind cluster (pinned kind and node image), if it is not there.
 source "$(dirname "$0")/common.sh"
-KIND_VERSION=v0.33.0
-KIND_SHA256=aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
 NODE_IMAGE=kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
 MIN_FREE_GIB=${MIN_FREE_GIB:-10}
 
@@ -12,16 +10,15 @@ if ((free_gib < MIN_FREE_GIB)); then
   exit 1
 fi
 
-if [[ ! -x $KIND ]] || ! echo "$KIND_SHA256  $KIND" | sha256sum -c --status; then
-  mkdir -p "$(dirname "$KIND")"
-  curl -fsSL -o "$KIND.new" "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-  echo "$KIND_SHA256  $KIND.new" | sha256sum -c --status
-  chmod 755 "$KIND.new"
-  mv "$KIND.new" "$KIND"
-fi
+ensure_kind
 
 if "$KIND" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   echo "up.sh: cluster $CLUSTER is already there"
+  # A kubeconfig removed by hand or by an older down.sh: write it again.
+  if [[ ! -f $ADMIN_KUBECONFIG ]]; then
+    mkdir -p "$(dirname "$ADMIN_KUBECONFIG")"
+    (umask 077 && "$KIND" export kubeconfig --name "$CLUSTER" --kubeconfig "$ADMIN_KUBECONFIG")
+  fi
 else
   mkdir -p "$(dirname "$ADMIN_KUBECONFIG")"
   (umask 077 && "$KIND" create cluster --name "$CLUSTER" --image "$NODE_IMAGE" \
