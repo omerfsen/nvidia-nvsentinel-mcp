@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.5.1...v0.5.2) (2026-11-11)
+
+
+### Bug fixes
+
+* **lab:** delete the kind cluster from a fresh clone ([#24](https://github.com/omerfsen/nvidia-nvsentinel-mcp/issues/24)) ([75a504d](https://github.com/omerfsen/nvidia-nvsentinel-mcp/commit/75a504d7c0803a76e290f97a652adfe8311e39b5))
+
 ## [0.5.1](https://github.com/omerfsen/nvidia-nvsentinel-mcp/compare/v0.5.0...v0.5.1) (2026-11-09)
 
 
