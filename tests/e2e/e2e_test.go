@@ -77,7 +77,8 @@ func serverCommand(t *testing.T, path string, allowChanges bool) *exec.Cmd {
 		return exec.Command("docker", "run", "--rm", "-i", "--read-only", "--cap-drop=ALL",
 			"--security-opt=no-new-privileges", "--user", strings.TrimSpace(ids(t)), "--memory=128m", "--cpus=1",
 			"--pids-limit=64", "--network=kind", "--volume", path+":/kube/config:ro",
-			"--env", "NVSENTINEL_MCP_ALLOW_CHANGES="+allow, image)
+			"--env", "NVSENTINEL_MCP_ALLOW_CHANGES="+allow,
+			"--env", "NVSENTINEL_MCP_LAB_CONTEXT="+os.Getenv("NVSENTINEL_MCP_LAB_CONTEXT"), image)
 	}
 
 	binary := os.Getenv("E2E_BINARY")
@@ -89,6 +90,11 @@ func serverCommand(t *testing.T, path string, allowChanges bool) *exec.Cmd {
 		"NVSENTINEL_MCP_KUBECONFIG=" + path,
 		"NVSENTINEL_MCP_ALLOW_CHANGES=" + allow,
 	}
+
+	if labContext := os.Getenv("NVSENTINEL_MCP_LAB_CONTEXT"); labContext != "" {
+		command.Env = append(command.Env, "NVSENTINEL_MCP_LAB_CONTEXT="+labContext)
+	}
+
 	command.Stderr = os.Stderr
 
 	return command
